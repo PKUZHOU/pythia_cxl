@@ -46,9 +46,11 @@ namespace knob
     extern bool l1d_perfect;
     extern bool l2c_perfect;
     extern bool llc_perfect;
+    extern bool pfb_perfect;
     extern bool l1d_semi_perfect;
     extern bool l2c_semi_perfect;
     extern bool llc_semi_perfect;
+    extern bool pfb_semi_perfect;
     extern uint32_t semi_perfect_cache_page_buffer_size;
 }
 
@@ -251,12 +253,20 @@ void finish_warmup()
         // reset branch stats
         ooo_cpu[i].num_branch = 0;
         ooo_cpu[i].branch_mispredictions = 0;
-	ooo_cpu[i].total_rob_occupancy_at_branch_mispredict = 0;
+	    ooo_cpu[i].total_rob_occupancy_at_branch_mispredict = 0;
 
         reset_cache_stats(i, &ooo_cpu[i].L1I);
         reset_cache_stats(i, &ooo_cpu[i].L1D);
         reset_cache_stats(i, &ooo_cpu[i].L2C);
         reset_cache_stats(i, &uncore.LLC);
+
+#ifdef WITH_PFB
+        reset_cache_stats(i, &uncore.PFB);
+#endif
+
+#ifdef WITH_CXL
+        reset_cache_stats(i, &uncore.CXL);
+#endif
     }
     cout << endl;
 
@@ -278,6 +288,15 @@ void finish_warmup()
         ooo_cpu[i].L2C.LATENCY  = L2C_LATENCY;
     }
     uncore.LLC.LATENCY = LLC_LATENCY;
+
+#ifdef WITH_PFB
+    uncore.PFB.LATENCY = PFB_LATENCY;
+#endif
+
+#ifdef WITH_CXL
+    uncore.CXL.LATENCY = CXL_LATENCY;
+#endif
+
 }
 
 void print_deadlock(uint32_t i)
@@ -441,6 +460,7 @@ uint64_t va_to_pa(uint32_t cpu, uint64_t instr_id, uint64_t va, uint64_t unique_
                 ooo_cpu[cpu].L1D.invalidate_entry(cl_addr);
                 ooo_cpu[cpu].L2C.invalidate_entry(cl_addr);
                 uncore.LLC.invalidate_entry(cl_addr);
+                // PFB does not need to be invalidated? 
             }
 
             // swap complete
@@ -548,9 +568,11 @@ void print_knobs()
         << "l1d_perfect " << knob::l1d_perfect << endl
         << "l2c_perfect " << knob::l2c_perfect << endl
         << "llc_perfect " << knob::llc_perfect << endl
+        << "pfb_perfect " << knob::pfb_perfect << endl
         << "l1d_semi_perfect " << knob::l1d_semi_perfect << endl
         << "l2c_semi_perfect " << knob::l2c_semi_perfect << endl
         << "llc_semi_perfect " << knob::llc_semi_perfect << endl
+        << "pfb_semi_perfect " << knob::pfb_semi_perfect << endl
         << "semi_perfect_cache_page_buffer_size " << knob::semi_perfect_cache_page_buffer_size << endl
         << endl;
     cout << "num_cpus " << NUM_CPUS << endl
@@ -580,6 +602,11 @@ void print_knobs()
         ooo_cpu[0].L2C.l2c_prefetcher_print_config();
     // }
     uncore.LLC.llc_prefetcher_print_config();
+
+#ifdef WITH_PFB
+    uncore.PFB.pfb_prefetcher_print_config();
+#endif
+
     cout << endl;
 }
 
@@ -787,10 +814,45 @@ int main(int argc, char** argv)
         uncore.LLC.upper_level_dcache[i] = &ooo_cpu[i].L2C;
         uncore.LLC.lower_level = &uncore.DRAM;
 
+#ifdef WITH_CXL
+        // CXL Channel 
+        uncore.LLC.lower_level = &uncore.CXL;        
+        uncore.CXL.cache_type = IS_CXL;
+        uncore.CXL.fill_level = FILL_CXL;
+        uncore.CXL.MAX_READ = NUM_CPUS;
+        uncore.CXL.upper_level_icache[i] = &uncore.LLC;
+        uncore.CXL.upper_level_dcache[i] = &uncore.LLC;
+#ifdef WITH_PFB
+        uncore.CXL.lower_level = &uncore.PFB;
+#else
+        uncore.CXL.lower_level = &uncore.DRAM;
+#endif
+#endif
+
+#ifdef WITH_PFB
+        // PFB
+        uncore.PFB.cache_type = IS_PFB;
+        uncore.PFB.fill_level = FILL_PFB;
+        uncore.PFB.MAX_READ = NUM_CPUS;
+        uncore.PFB.upper_level_icache[i] = &uncore.CXL;
+        uncore.PFB.upper_level_dcache[i] = &uncore.CXL;
+        uncore.PFB.lower_level = &uncore.DRAM;     
+#endif
+
         // OFF-CHIP DRAM
         uncore.DRAM.fill_level = FILL_DRAM;
+#ifdef WITH_PFB
+        uncore.DRAM.upper_level_icache[i] = &uncore.PFB;
+        uncore.DRAM.upper_level_dcache[i] = &uncore.PFB;
+#else
+ #ifdef WITH_CXL
+        uncore.DRAM.upper_level_icache[i] = &uncore.CXL;
+        uncore.DRAM.upper_level_dcache[i] = &uncore.CXL;
+ #else
         uncore.DRAM.upper_level_icache[i] = &uncore.LLC;
         uncore.DRAM.upper_level_dcache[i] = &uncore.LLC;
+ #endif    
+#endif 
         for (uint32_t i=0; i<DRAM_CHANNELS; i++) {
             uncore.DRAM.RQ[i].is_RQ = 1;
             uncore.DRAM.WQ[i].is_WQ = 1;
@@ -813,6 +875,11 @@ int main(int argc, char** argv)
 
     uncore.LLC.llc_initialize_replacement();
     uncore.LLC.llc_prefetcher_initialize();
+
+#ifdef WITH_PFB
+    uncore.PFB.pfb_prefetcher_initialize();
+    uncore.PFB.pfb_initialize_replacement();
+#endif
 
     print_knobs();
 
@@ -950,7 +1017,13 @@ int main(int argc, char** argv)
                 record_roi_stats(i, &ooo_cpu[i].L1I);
                 record_roi_stats(i, &ooo_cpu[i].L2C);
                 record_roi_stats(i, &uncore.LLC);
+#ifdef WITH_PFB
+                record_roi_stats(i, &uncore.PFB);
+#endif
 
+#ifdef WITH_CXL
+                record_roi_stats(i, &uncore.CXL);
+#endif
                 all_simulation_complete++;
             }
 
@@ -976,9 +1049,20 @@ int main(int argc, char** argv)
             uncore.DRAM.total_bw_epochs++;
             uncore.DRAM.bw_level_hist[uncore.DRAM.bw]++;
             uncore.LLC.broadcast_bw(uncore.DRAM.bw);
+#ifdef WITH_PFB
+            uncore.PFB.broadcast_bw(uncore.DRAM.bw);
+#endif
         }
 
         uncore.LLC.operate();
+
+#ifdef WITH_CXL
+        uncore.CXL.operate();
+#endif
+
+#ifdef WITH_PFB  
+        uncore.PFB.operate();
+#endif        
         uncore.DRAM.operate();
     }
 
@@ -1020,6 +1104,15 @@ int main(int argc, char** argv)
         print_roi_stats(i, &ooo_cpu[i].L2C);
 #endif
         print_roi_stats(i, &uncore.LLC);
+
+#ifdef WITH_PFB
+        print_roi_stats(i, &uncore.PFB);
+#endif 
+
+#ifdef WITH_CXL
+        print_roi_stats(i, &uncore.CXL);
+#endif
+
         cout << "Core_" << i << "_major_page_fault " << major_fault[i] << endl
             << "Core_" << i << "_minor_page_fault " << minor_fault[i] << endl
             << endl;
@@ -1032,8 +1125,16 @@ int main(int argc, char** argv)
 
     uncore.LLC.llc_prefetcher_final_stats();
 
+#ifdef WITH_PFB
+    uncore.PFB.pfb_prefetcher_final_stats();
+#endif
+
 #ifndef CRC2_COMPILE
     uncore.LLC.llc_replacement_final_stats();
+
+#ifdef WITH_PFB
+    uncore.PFB.pfb_replacement_final_stats();
+#endif
     print_dram_stats();
 #endif
 

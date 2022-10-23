@@ -19,9 +19,14 @@ namespace knob
 	bool     l1d_perfect = false;
 	bool     l2c_perfect = false;
 	bool     llc_perfect = false;
+	bool     pfb_perfect = false;
+	bool     cxl_perfect = false;
 	bool     l1d_semi_perfect = false;
 	bool     l2c_semi_perfect = false;
 	bool     llc_semi_perfect = false;
+	bool     pfb_semi_perfect = false;
+	bool     cxl_semi_perfect = false;
+
 	uint32_t semi_perfect_cache_page_buffer_size = 64;
 	bool     measure_ipc = false;
 	uint64_t measure_ipc_epoch = 1000;
