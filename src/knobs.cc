@@ -14,7 +14,7 @@ namespace knob
 	uint64_t simulation_instructions = 1000000;
 	bool  	 knob_cloudsuite = false;
 	bool     knob_low_bandwidth = false;
-	vector<string> 	 l2c_prefetcher_types;
+ 	vector<string> 	 l2c_prefetcher_types;
 	vector<string> 	 l1d_prefetcher_types;
 	bool     l1d_perfect = false;
 	bool     l2c_perfect = false;
@@ -129,6 +129,7 @@ namespace knob
 	float 	mlop_l1d_thresh;
 	float 	mlop_l2c_thresh;
 	float 	mlop_llc_thresh;
+	float   mlop_pfb_thresh;
 	uint32_t	mlop_debug_level;
 
 	/* Bingo */
@@ -724,6 +725,10 @@ int parse_knobs(void* user, const char* section, const char* name, const char* v
 	else if (MATCH("", "mlop_llc_thresh"))
 	{
 		knob::mlop_llc_thresh = atof(value);
+	}
+	else if (MATCH("", "mlop_pfb_thresh"))
+	{
+		knob::mlop_pfb_thresh = atof(value);
 	}
 	else if (MATCH("", "mlop_debug_level"))
 	{
