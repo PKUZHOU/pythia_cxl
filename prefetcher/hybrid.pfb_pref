@@ -1,0 +1,2646 @@
+////////////////////////////////////////////vldp
+// #include <bits/stdc++.h>
+// #include "cache.h"
+// #define DEGREE_ 10
+// #include <iostream>
+// #include <fstream>
+//ofstream myfile;
+using namespace std;
+/* VLDP settings */
+const int PREFETCH_DEGREE = 10;
+const int DHB_SIZE = 16;
+const int OPT_SIZE = 64;
+const int DPT_SIZE = 64;
+
+///////////////////////////////////////////spp
+#include "cache.h"
+#include <iostream>
+#include <fstream>
+//ofstream myfile;
+
+
+#ifndef SPP_H
+#define SPP_H
+
+// SPP functional knobs
+#define LOOKAHEAD_ON
+#define FILTER_ON
+#define GHR_ON
+#define SPP_SANITY_pfb_check
+
+//#define SPP_DEBUG_PRINT
+#ifdef SPP_DEBUG_PRINT
+#define SPP_DP(x) x
+#else
+#define SPP_DP(x)
+#endif
+
+// Signature table parameters
+#define ST_SET 1
+#define ST_WAY 256
+#define ST_TAG_BIT 16
+#define ST_TAG_MASK ((1 << ST_TAG_BIT) - 1)
+#define SIG_SHIFT 3
+#define SIG_BIT 12
+#define SIG_MASK ((1 << SIG_BIT) - 1)
+#define SIG_DELTA_BIT 7
+
+// Pattern table parameters
+#define PT_SET 512
+#define PT_WAY 4
+#define C_SIG_BIT 4
+#define C_DELTA_BIT 4
+#define C_SIG_MAX ((1 << C_SIG_BIT) - 1)
+#define C_DELTA_MAX ((1 << C_DELTA_BIT) - 1)
+
+// Prefetch filter parameters
+#define QUOTIENT_BIT  10
+#define REMAINDER_BIT 6
+#define HASH_BIT (QUOTIENT_BIT + REMAINDER_BIT + 1)
+#define FILTER_SET (1 << QUOTIENT_BIT)
+#define FILL_THRESHOLD 90
+#define PF_THRESHOLD 25
+
+// Global register parameters
+#define GLOBAL_COUNTER_BIT 10
+#define GLOBAL_COUNTER_MAX ((1 << GLOBAL_COUNTER_BIT) - 1) 
+#define MAX_GHR_ENTRY 8
+
+enum FILTER_REQUEST {SPP_L2C_PREFETCH, SPP_LLC_PREFETCH, L2C_DEMAND, L2C_EVICT}; // Request type for prefetch filter
+
+extern uint64_t pfb_get_hash(uint64_t key);
+
+class SIGNATURE_TABLE {
+  public:
+    bool     valid[ST_SET][ST_WAY];
+    uint32_t tag[ST_SET][ST_WAY],
+             last_offset[ST_SET][ST_WAY],
+             sig[ST_SET][ST_WAY],
+             lru[ST_SET][ST_WAY];
+
+    SIGNATURE_TABLE() {
+        cout << "Initialize SIGNATURE TABLE" << endl;
+        cout << "ST_SET: " << ST_SET << endl;
+        cout << "ST_WAY: " << ST_WAY << endl;
+        cout << "ST_TAG_BIT: " << ST_TAG_BIT << endl;
+        cout << "ST_TAG_MASK: " << hex << ST_TAG_MASK << dec << endl;
+
+        for (uint32_t set = 0; set < ST_SET; set++)
+            for (uint32_t way = 0; way < ST_WAY; way++) {
+                valid[set][way] = 0;
+                tag[set][way] = 0;
+                last_offset[set][way] = 0;
+                sig[set][way] = 0;
+                lru[set][way] = way;
+            }
+    };
+
+    void read_and_update_sig(uint64_t page, uint32_t page_offset, uint32_t &last_sig, uint32_t &curr_sig, int32_t &delta);
+};
+
+class PATTERN_TABLE {
+  public:
+    int      delta[PT_SET][PT_WAY];
+    uint32_t c_delta[PT_SET][PT_WAY],
+             c_sig[PT_SET];
+
+    PATTERN_TABLE() {
+        cout << endl << "Initialize PATTERN TABLE" << endl;
+        cout << "PT_SET: " << PT_SET << endl;
+        cout << "PT_WAY: " << PT_WAY << endl;
+        cout << "SIG_DELTA_BIT: " << SIG_DELTA_BIT << endl;
+        cout << "C_SIG_BIT: " << C_SIG_BIT << endl;
+        cout << "C_DELTA_BIT: " << C_DELTA_BIT << endl;
+
+        for (uint32_t set = 0; set < PT_SET; set++) {
+            for (uint32_t way = 0; way < PT_WAY; way++) {
+                delta[set][way] = 0;
+                c_delta[set][way] = 0;
+            }
+            c_sig[set] = 0;
+        }
+    }
+
+    void pfb_update_pattern(uint32_t last_sig, int curr_delta),
+         read_pattern(uint32_t curr_sig, int *prefetch_delta, uint32_t *confidence_q, uint32_t &lookahead_way, uint32_t &lookahead_conf, uint32_t &pf_q_tail, uint32_t &depth);
+};
+
+class PREFETCH_FILTER {
+  public:
+    uint64_t remainder_tag[FILTER_SET];
+    bool     valid[FILTER_SET],  // Consider this as "prefetched"
+             useful[FILTER_SET]; // Consider this as "used"
+
+    PREFETCH_FILTER() {
+        cout << endl << "Initialize PREFETCH FILTER" << endl;
+        cout << "FILTER_SET: " << FILTER_SET << endl;
+
+        for (uint32_t set = 0; set < FILTER_SET; set++) {
+            remainder_tag[set] = 0;
+            valid[set] = 0;
+            useful[set] = 0;
+        }
+
+    }
+
+    bool     pfb_check(uint64_t pf_addr, FILTER_REQUEST filter_request);
+};
+
+class GLOBAL_REGISTER {
+  public:
+    // Global counters to calculate global prefetching accuracy
+    uint64_t pf_useful,
+             pf_issued,
+             global_accuracy; // Alpha value in Section III. Equation 3
+
+    // Global History Register (GHR) entries
+    uint8_t  valid[MAX_GHR_ENTRY];
+    uint32_t sig[MAX_GHR_ENTRY],
+             confidence[MAX_GHR_ENTRY],
+             offset[MAX_GHR_ENTRY];
+    int      delta[MAX_GHR_ENTRY];
+
+    GLOBAL_REGISTER() {
+        pf_useful = 0;
+        pf_issued = 0;
+        global_accuracy = 0;
+
+        for (uint32_t i = 0; i < MAX_GHR_ENTRY; i++) {
+            valid[i] = 0;
+            sig[i] = 0;
+            confidence[i] = 0;
+            offset[i] = 0;
+            delta[i] = 0;
+        }
+    }
+
+    void pfb_update_entry(uint32_t pf_sig, uint32_t pf_confidence, uint32_t pf_offset, int pf_delta);
+    uint32_t pfb_check_entry(uint32_t page_offset);
+};
+
+#endif
+
+
+SIGNATURE_TABLE ST;
+PATTERN_TABLE   PT;
+PREFETCH_FILTER FILTER;
+GLOBAL_REGISTER GHR;
+///////////////////////////////////////////bo
+#include <bits/stdc++.h>
+///////////////////////////////////////////domino
+#include <stdio.h>
+// #include "cache.h"
+#include <map>
+#include <set>
+#include <cassert>
+#include <set>
+// #define DEGREE 1
+// #include <iostream>
+// #include <fstream>
+//ofstream myfile;
+unsigned int pfb_total_access;
+unsigned int pfb_predictions;
+unsigned int no_prediction;
+uint64_t addr_context[2];
+uint64_t pointer;
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////vldp
+class Table_ {
+public:
+    Table_(int width, int height) : width(width), height(height), cells(height, vector<string>(width)) {}
+
+    void set_row(int row, const vector<string> &data, int start_col = 0) {
+        assert(data.size() + start_col == this->width);
+        for (unsigned col = start_col; col < this->width; col += 1)
+            this->set_cell(row, col, data[col]);
+    }
+
+    void set_col(int col, const vector<string> &data, int start_row = 0) {
+        assert(data.size() + start_row == this->height);
+        for (unsigned row = start_row; row < this->height; row += 1)
+            this->set_cell(row, col, data[row]);
+    }
+
+    void set_cell(int row, int col, string data) {
+        assert(0 <= row && row < (int)this->height);
+        assert(0 <= col && col < (int)this->width);
+        this->cells[row][col] = data;
+    }
+
+    void set_cell(int row, int col, double data) {
+        this->oss.str("");
+        this->oss << setw(11) << fixed << setprecision(8) << data;
+        this->set_cell(row, col, this->oss.str());
+    }
+
+    void set_cell(int row, int col, int64_t data) {
+        this->oss.str("");
+        this->oss << setw(11) << std::left << data;
+        this->set_cell(row, col, this->oss.str());
+    }
+
+    void set_cell(int row, int col, int data) { this->set_cell(row, col, (int64_t)data); }
+
+    void set_cell(int row, int col, uint64_t data) { this->set_cell(row, col, (int64_t)data); }
+
+    string to_string() {
+        vector<int> widths;
+        for (unsigned i = 0; i < this->width; i += 1) {
+            int max_width = 0;
+            for (unsigned j = 0; j < this->height; j += 1)
+                max_width = max(max_width, (int)this->cells[j][i].size());
+            widths.push_back(max_width + 2);
+        }
+        string out;
+        out += Table_::top_line(widths);
+        out += this->data_row(0, widths);
+        for (unsigned i = 1; i < this->height; i += 1) {
+            out += Table_::mid_line(widths);
+            out += this->data_row(i, widths);
+        }
+        out += Table_::bot_line(widths);
+        return out;
+    }
+
+    string data_row(int row, const vector<int> &widths) {
+        string out;
+        for (unsigned i = 0; i < this->width; i += 1) {
+            string data = this->cells[row][i];
+            data.resize(widths[i] - 2, ' ');
+            out += " | " + data;
+        }
+        out += " |\n";
+        return out;
+    }
+
+    static string top_line(const vector<int> &widths) { return Table_::line(widths, "┌", "┬", "┐"); }
+
+    static string mid_line(const vector<int> &widths) { return Table_::line(widths, "├", "┼", "┤"); }
+
+    static string bot_line(const vector<int> &widths) { return Table_::line(widths, "└", "┴", "┘"); }
+
+    static string line(const vector<int> &widths, string left, string mid, string right) {
+        string out = " " + left;
+        for (unsigned i = 0; i < widths.size(); i += 1) {
+            int w = widths[i];
+            for (int j = 0; j < w; j += 1)
+                out += "─";
+            if (i != widths.size() - 1)
+                out += mid;
+            else
+                out += right;
+        }
+        return out + "\n";
+    }
+
+private:
+    unsigned width;
+    unsigned height;
+    vector<vector<string>> cells;
+    ostringstream oss;
+};
+
+template <class T> class InfiniteCache_ {
+public:
+    class Entry {
+    public:
+        uint64_t key;
+        uint64_t index;
+        uint64_t tag;
+        bool valid;
+        T data;
+    };
+
+    Entry *erase(uint64_t key) {
+        Entry *entry = this->find(key);
+        if (!entry)
+            return nullptr;
+        entry->valid = false;
+        this->last_erased_entry = *entry;
+        int num_erased = this->entries.erase(key);
+        assert(num_erased == 1);
+        return &this->last_erased_entry;
+    }
+
+    /**
+     * @return The old state of the entry that was written to.
+     */
+    Entry insert(uint64_t key, const T &data) {
+        Entry *entry = this->find(key);
+        if (entry != nullptr) {
+            Entry old_entry = *entry;
+            entry->data = data;
+            return old_entry;
+        }
+        entries[key] = { key, 0, key, true, data };
+        return {};
+    }
+
+    Entry *find(uint64_t key) {
+        auto it = this->entries.find(key);
+        if (it == this->entries.end())
+            return nullptr;
+        Entry &entry = (*it).second;
+        assert(entry.tag == key && entry.valid);
+        return &entry;
+    }
+
+    /**
+     * For debugging purposes.
+     */
+    string log(vector<string> headers, function<void(Entry &, Table_ &, int)> write_data) {
+        Table_ table(headers.size(), entries.size() + 1);
+        table.set_row(0, headers);
+        unsigned i = 0;
+        for (auto &x : this->entries)
+            write_data(x.second, table, ++i);
+        return table.to_string();
+    }
+
+    void set_debug_level(int debug_level) { this->debug_level = debug_level; }
+
+protected:
+    Entry last_erased_entry;
+    unordered_map<uint64_t, Entry> entries;
+    int debug_level = 0;
+};
+
+template <class T> class SetAssociativeCache_ {
+public:
+    class Entry {
+    public:
+        uint64_t key;
+        uint64_t index;
+        uint64_t tag;
+        bool valid;
+        T data;
+    };
+
+    SetAssociativeCache_(int size, int num_ways)
+        : size(size), num_ways(num_ways), num_sets(size / num_ways), entries(num_sets, vector<Entry>(num_ways)),
+        cams(num_sets) {
+        assert(size % num_ways == 0);
+        for (int i = 0; i < num_sets; i += 1)
+            for (int dir = 0; dir < num_ways; dir += 1)
+                entries[i][dir].valid = false;
+    }
+
+    Entry *erase(uint64_t key) {
+        Entry *entry = this->find(key);
+        uint64_t index = key % this->num_sets;
+        uint64_t tag = key / this->num_sets;
+        auto &cam = cams[index];
+        int num_erased = cam.erase(tag);
+        if (entry)
+            entry->valid = false;
+        assert(entry ? num_erased == 1 : num_erased == 0);
+        return entry;
+    }
+
+    /**
+     * @return The old state of the entry that was written to.
+     */
+    Entry insert(uint64_t key, const T &data) {
+        Entry *entry = this->find(key);
+        if (entry != nullptr) {
+            Entry old_entry = *entry;
+            entry->data = data;
+            return old_entry;
+        }
+        uint64_t index = key % this->num_sets;
+        uint64_t tag = key / this->num_sets;
+        vector<Entry> &set = this->entries[index];
+        int victim_way = -1;
+        for (int i = 0; i < this->num_ways; i += 1)
+            if (!set[i].valid) {
+                victim_way = i;
+                break;
+            }
+        if (victim_way == -1) {
+            victim_way = this->select_victim(index);
+        }
+        Entry &victim = set[victim_way];
+        Entry old_entry = victim;
+        victim = { key, index, tag, true, data };
+        auto &cam = cams[index];
+        if (old_entry.valid) {
+            int num_erased = cam.erase(old_entry.tag);
+            assert(num_erased == 1);
+        }
+        cam[tag] = victim_way;
+        return old_entry;
+    }
+
+    Entry *find(uint64_t key) {
+        uint64_t index = key % this->num_sets;
+        uint64_t tag = key / this->num_sets;
+        auto &cam = cams[index];
+        if (cam.find(tag) == cam.end())
+            return nullptr;
+        int way = cam[tag];
+        Entry &entry = this->entries[index][way];
+        assert(entry.tag == tag && entry.valid);
+        return &entry;
+    }
+
+    /**
+     * For debugging purposes.
+     */
+    string log(vector<string> headers, function<void(Entry &, Table_ &, int)> write_data) {
+        vector<Entry> valid_entries = this->get_valid_entries();
+        Table_ table(headers.size(), valid_entries.size() + 1);
+        table.set_row(0, headers);
+        for (unsigned i = 0; i < valid_entries.size(); i += 1)
+            write_data(valid_entries[i], table, i + 1);
+        return table.to_string();
+    }
+
+    void set_debug_level(int debug_level) { this->debug_level = debug_level; }
+
+protected:
+    /**
+     * @return The way of the selected victim.
+     */
+    virtual int select_victim(uint64_t index) {
+        /* random eviction policy if not overriden */
+        return rand() % this->num_ways;
+    }
+
+    vector<Entry> get_valid_entries() {
+        vector<Entry> valid_entries;
+        for (int i = 0; i < num_sets; i += 1)
+            for (int dir = 0; dir < num_ways; dir += 1)
+                if (entries[i][dir].valid)
+                    valid_entries.push_back(entries[i][dir]);
+        return valid_entries;
+    }
+
+    int size;
+    int num_ways;
+    int num_sets;
+    vector<vector<Entry>> entries;
+    vector<unordered_map<uint64_t, int>> cams;
+    int debug_level = 0;
+};
+
+template <class T> class LRUSetAssociativeCache_ : public SetAssociativeCache_<T> {
+    typedef SetAssociativeCache_<T> Super;
+
+public:
+    LRUSetAssociativeCache_(int size, int num_ways)
+        : Super(size, num_ways), lru(this->num_sets, vector<uint64_t>(num_ways)) {}
+
+    void set_mru(uint64_t key) { *this->get_lru(key) = this->t++; }
+
+    void set_lru(uint64_t key) { *this->get_lru(key) = 0; }
+
+protected:
+    /* @override */
+    int select_victim(uint64_t index) {
+        vector<uint64_t> &lru_set = this->lru[index];
+        return min_element(lru_set.begin(), lru_set.end()) - lru_set.begin();
+    }
+
+    uint64_t *get_lru(uint64_t key) {
+        uint64_t index = key % this->num_sets;
+        uint64_t tag = key / this->num_sets;
+        int way = this->cams[index][tag];
+        return &this->lru[index][way];
+    }
+
+    vector<vector<uint64_t>> lru;
+    uint64_t t = 0;
+};
+
+template <class T> class NMRUSetAssociativeCache_ : public SetAssociativeCache_<T> {
+    typedef SetAssociativeCache_<T> Super;
+
+public:
+    NMRUSetAssociativeCache_(int size, int num_ways) : Super(size, num_ways), mru(this->num_sets) {}
+
+    void set_mru(uint64_t key) {
+        uint64_t index = key % this->num_sets;
+        uint64_t tag = key / this->num_sets;
+        int way = this->cams[index][tag];
+        this->mru[index] = way;
+    }
+
+protected:
+    /* @override */
+    int select_victim(uint64_t index) {
+        int way = rand() % (this->num_ways - 1);
+        if (way >= mru[index])
+            way += 1;
+        return way;
+    }
+
+    vector<int> mru;
+};
+
+template <class T> class LRUFullyAssociativeCache_ : public LRUSetAssociativeCache_<T> {
+    typedef LRUSetAssociativeCache_<T> Super;
+
+public:
+    LRUFullyAssociativeCache_(int size) : Super(size, size) {}
+};
+
+template <class T> class NMRUFullyAssociativeCache_ : public NMRUSetAssociativeCache_<T> {
+    typedef NMRUSetAssociativeCache_<T> Super;
+
+public:
+    NMRUFullyAssociativeCache_(int size) : Super(size, size) {}
+};
+
+template <class T> class DirectMappedCache_ : public SetAssociativeCache_<T> {
+    typedef SetAssociativeCache_<T> Super;
+
+public:
+    DirectMappedCache_(int size) : Super(size, 1) {}
+};
+
+/** End Of Cache Framework **/
+
+class ShiftRegister {
+public:
+    /* the maximum total capacity of this shift register is 64 bits */
+    ShiftRegister(unsigned size = 4) : size(size), width(64 / size) {}
+
+    void insert(int x) {
+        x &= (1 << this->width) - 1;
+        this->reg = (this->reg << this->width) | x;
+    }
+
+    /**
+     * @return Returns raw buffer data in range [le, ri).
+     * Note that more recent data have a smaller index.
+     */
+    uint64_t get_code(unsigned le, unsigned ri) {
+        assert(0 <= le && le < this->size);
+        assert(le < ri && ri <= this->size);
+        uint64_t mask = (1ull << (this->width * (ri - le))) - 1ull;
+        return (this->reg >> (le * this->width)) & mask;
+    }
+
+    /**
+     * @return Returns integer value of data at specified index.
+     */
+    int get_value(int i) {
+        int x = this->get_code(i, i + 1);
+        /* sign extend */
+        int d = 32 - this->width;
+        return (x << d) >> d;
+    }
+
+private:
+    unsigned size;
+    unsigned width;
+    uint64_t reg = 0;
+};
+
+class SaturatingCounter {
+public:
+    SaturatingCounter(int size = 2) : size(size), max((1 << size) - 1) {}
+
+    int inc() {
+        this->cnt += 1;
+        if (this->cnt > this->max)
+            this->cnt = this->max;
+        return this->cnt;
+    }
+
+    int dec() {
+        this->cnt -= 1;
+        if (this->cnt < 0)
+            this->cnt = 0;
+        return this->cnt;
+    }
+
+    int get_cnt() { return this->cnt; }
+
+private:
+    int size, max, cnt = 0;
+};
+
+class DeltaHistoryBufferData {
+public:
+    uint64_t last_addr;
+    ShiftRegister deltas;
+    int last_predictor;
+    int num_times_used;
+    /* Each entry in the DHB contains the following data for a tracked physical page: (i) page number, (ii) page offset
+     * of the last address accessed in this page, (iii) sequence of up to 4 recently observed deltas, (iv) the DPT level
+     * used for the latest delta prediction, (v) the number of times this page has been used, and (vi) sequence of up to
+     * 4 recently prefetched offsets. */
+};
+
+class DeltaHistoryBuffer : public NMRUFullyAssociativeCache_<DeltaHistoryBufferData> {
+    typedef NMRUFullyAssociativeCache_<DeltaHistoryBufferData> Super;
+
+public:
+    using Super::Super; /* inherit constructors */
+
+    int update(uint64_t page_number, uint64_t page_offset) {
+        Entry *entry = this->find(page_number);
+        if (entry) {
+            this->set_mru(page_number);
+            DeltaHistoryBufferData &data = entry->data;
+            int delta = page_offset - data.last_addr;
+            if (delta == 0)
+                return 0;
+            data.deltas.insert(delta);
+            data.last_addr = page_offset;
+            data.num_times_used += 1;
+            return delta;
+        }
+        else {
+            /* If no matching entry is found (DHB miss), then a not-Most Recently Used (nMRU) DHB entry is evicted and
+             * assigned to the new page number (nMRU replacement policy). */
+            this->insert(page_number, { page_offset, ShiftRegister(4), 0, 1 });
+            this->set_mru(page_number);
+            return -1;
+        }
+    }
+};
+
+class OffsetPredictionTable_Data {
+public:
+    int pred;
+    bool accuracy;
+};
+
+class OffsetPredictionTable_ : public DirectMappedCache_<OffsetPredictionTable_Data> {
+    typedef DirectMappedCache_<OffsetPredictionTable_Data> Super;
+
+public:
+    using Super::Super; /* inherit constructors */
+
+    void update(int first_offset, int delta) {
+        /* If the OPT prediction matches the observed delta, the accuracy bit is set to 1, or remains 1 if it was
+         * already 1. If the OPT prediction does not match the observed delta, the accuracy bit is set to 0. If the
+         * accuracy bit was already 0, the old predicted delta is replaced with the new observed delta, and the accuracy
+         * bit remains 0. */
+        Entry *entry = this->find(first_offset);
+        if (entry) {
+            OffsetPredictionTable_Data &data = entry->data;
+            if (data.pred == delta) {
+                data.accuracy = 1;
+            }
+            else {
+                if (data.accuracy == 0)
+                    data.pred = delta;
+                data.accuracy = 0;
+            }
+        }
+        else {
+            this->insert(first_offset, { delta, 0 });
+        }
+    }
+};
+
+class DeltaPredictionTable_Data {
+public:
+    int pred;
+    SaturatingCounter accuracy;
+    /* The delta histories obtained from the DHB are used as the keys, and the delta pfb_predictions stored in the DPT are
+     * the values. Also, each DPT entry has a 2-bit accuracy counter, and a 1-bit nMRU value. */
+    /* Each entry in the table consists of 4 basic elements: a delta history (delta), a delta prediction (pred), a 2-bit
+     * accuracy counter, and a single nMRU bit. */
+};
+
+class DeltaPredictionTable_ : public NMRUFullyAssociativeCache_<DeltaPredictionTable_Data> {
+    typedef NMRUFullyAssociativeCache_<DeltaPredictionTable_Data> Super;
+
+public:
+    using Super::Super; /* inherit constructors */
+};
+
+class DeltaPredictionTable_s {
+public:
+    DeltaPredictionTable_s(int delta_prediction_table_size)
+        /* Our DPT implementation uses a set of 3 DPT tables, allowing for histories up to 3 deltas long. */
+        : delta_prediction_table(3, DeltaPredictionTable_(delta_prediction_table_size)) {}
+
+    void update(uint64_t page_number, ShiftRegister deltas, int last_predictor) {
+        /* last predictor is either 0, 1 or 2 (since there are 3 DPTs) */
+        uint64_t key = deltas.get_code(1, last_predictor + 2);
+        /* The DHB entry for a page also stores the ID of the DPT table which was most recently used to predict the
+         * prefetch candidates for this page. This ID is used to update the accuracy of the DPT */
+        DeltaPredictionTable_::Entry *entry = delta_prediction_table[last_predictor].find(key);
+        if (entry) {
+            delta_prediction_table[last_predictor].set_mru(key);
+            int last_delta = deltas.get_value(0);
+            DeltaPredictionTable_Data &dpt_data = entry->data;
+            /* Based on the accuracy of the previous prediction the accuracy bits of that prediction entry can be
+             * updated; incremented in the case of an accurate prediction, decremented otherwise. */
+            if (dpt_data.pred == last_delta)
+                dpt_data.accuracy.inc();
+            else {
+                dpt_data.accuracy.dec();
+                /* Finally, if the prediction accuracy is sufficiently low, the delta prediction field may be updated to
+                 * reflect the new delta. */
+                if (dpt_data.accuracy.get_cnt() == 0)
+                    dpt_data.pred = last_delta;
+                /* Inaccurate pfb_predictions in a DPT table T will prompt the promotion of the delta pattern to the next
+                 * table T+1. */
+                if (last_predictor != 2 && deltas.get_value(last_predictor + 2) != 0) {
+                    uint64_t new_key = deltas.get_code(1, last_predictor + 3);
+                    /* NOTE: promoted entries are assigned an accuracy of zero */
+                    delta_prediction_table[last_predictor + 1].insert(new_key, { deltas.get_value(0) });
+                    delta_prediction_table[last_predictor + 1].set_mru(new_key);
+                }
+            }
+        }
+        /* If a matching delta pattern is not currently present in any DPT tables, then an entry is created for the
+         * latest delta in the shortest-history table. */
+        for (int i = 2; i >= 0; i -= 1) {
+            DeltaPredictionTable_ &dpt = delta_prediction_table[i];
+            uint64_t key = deltas.get_code(1, i + 2);
+            DeltaPredictionTable_::Entry *entry = dpt.find(key);
+            if (entry)
+                return;
+        }
+        delta_prediction_table[0].insert(deltas.get_code(1, 2), { deltas.get_value(0) });
+        delta_prediction_table[0].set_mru(deltas.get_code(1, 2));
+    }
+
+    /**
+     * @return A pair containing (delta prediction, table index).
+     */
+    pair<int, int> get_prediction(uint64_t page_number, ShiftRegister deltas) {
+        /* When searching for a delta to prefetch, VLDP prefers to use pfb_predictions that come from DPT tables that track
+         * longer histories. */
+         /* DPT lookups may produce matches in more than one of the DPT tables. In these cases, VLDP prioritizes
+          * pfb_predictions made by the table that uses the longest matching delta history, which maximizes accuracy. */
+        for (int i = 2; i >= 0; i -= 1) {
+            DeltaPredictionTable_ &dpt = delta_prediction_table[i];
+            uint64_t key = deltas.get_code(0, i + 1);
+            DeltaPredictionTable_::Entry *entry = dpt.find(key);
+            if (entry) {
+                dpt.set_mru(key);
+                return make_pair(entry->data.pred, i);
+            }
+        }
+        return make_pair(0, 0);
+    }
+
+private:
+    vector<DeltaPredictionTable_> delta_prediction_table;
+};
+
+class VLDP {
+public:
+    /* page_size is in blocks */
+    VLDP(int page_size, int prefetch_degree, int delta_history_buffer_size = 16, int offset_prediction_table_size = 64,
+        int delta_prediction_table_size = 64)
+        : page_size(page_size), prefetch_degree(prefetch_degree), delta_history_buffer(delta_history_buffer_size),
+        offset_prediction_table(offset_prediction_table_size), delta_prediction_tables(delta_prediction_table_size) {}
+
+    /**
+     * @param block_number The block number that caused a PAE (miss or prefetch hit).
+     * @return A vector of block numbers that should be prefetched.
+     */
+    vector<uint64_t> access(uint64_t block_number) {
+        uint64_t page_number = block_number / this->page_size;
+        int page_offset = block_number % this->page_size;
+        int delta = this->delta_history_buffer.update(page_number, page_offset);
+        if (delta == 0)
+            return vector<uint64_t>();
+        DeltaHistoryBufferData &dhb_data = this->delta_history_buffer.find(page_number)->data;
+        if (dhb_data.num_times_used == 1) {
+            /* On the first access to a page, the OPT is looked up using the page offset, and if the accuracy bit is set
+             * for this entry, a prefetch is issued with the predicted delta*/
+            OffsetPredictionTable_::Entry *entry = this->offset_prediction_table.find(page_offset);
+            if (!entry || entry->data.accuracy == 0)
+                return vector<uint64_t>();
+            else
+                return vector<uint64_t>(1, entry->data.pred + page_number * this->page_size);
+        }
+        else if (dhb_data.num_times_used == 2) {
+            /* On the second access to a page, a delta can be computed and compared with the contents of the OPT. */
+            uint64_t first_offset = page_offset - delta;
+            this->offset_prediction_table.update(first_offset, delta);
+        }
+        else {
+            this->delta_prediction_tables.update(page_number, dhb_data.deltas, dhb_data.last_predictor);
+        }
+        vector<uint64_t> preds;
+        ShiftRegister deltas = dhb_data.deltas;
+        for (int i = 0; i < this->prefetch_degree; i += 1) {
+            pair<int, int> pred = this->delta_prediction_tables.get_prediction(page_number, deltas);
+            int delta = pred.first;
+            int table_index = pred.second;
+            /* Despite the fact that the DPT yields 4 separate pfb_predictions in this case, the accuracy is updated only
+             * once for the table that issued the original prediction. */
+            if (i == 0)
+                dhb_data.last_predictor = table_index;
+            /* While issuing multi degree prefetches, we only accept pfb_predictions of tables 2-3 for degrees greater
+             * than 1. */
+            if (delta == 0 || (i > 0 && table_index == 0))
+                break;
+            block_number += delta;
+            /* do not prefetch beyond page boundaries */
+            if (block_number / this->page_size == page_number) {
+                preds.push_back(block_number);
+            }
+            deltas.insert(delta);
+        }
+        return preds;
+    }
+
+    void set_debug_level(int debug_level) {}
+
+private:
+    int page_size, prefetch_degree;
+    DeltaHistoryBuffer delta_history_buffer;
+    OffsetPredictionTable_ offset_prediction_table;
+    DeltaPredictionTable_s delta_prediction_tables;
+};
+
+vector<VLDP> pfb_prefetchers;
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////spp.cc
+// TODO: Find a good 64-bit hash function
+uint64_t pfb_get_hash(uint64_t key)
+{
+    // Robert Jenkins' 32 bit mix function
+    key += (key << 12);
+    key ^= (key >> 22);
+    key += (key << 4);
+    key ^= (key >> 9);
+    key += (key << 10);
+    key ^= (key >> 2);
+    key += (key << 7);
+    key ^= (key >> 12);
+
+    // Knuth's multiplicative method
+    key = (key >> 3) * 2654435761;
+
+    return key;
+}
+
+void SIGNATURE_TABLE::read_and_update_sig(uint64_t page, uint32_t page_offset, uint32_t &last_sig, uint32_t &curr_sig, int32_t &delta)
+{
+    uint32_t set = pfb_get_hash(page) % ST_SET,
+             match = ST_WAY,
+             partial_page = page & ST_TAG_MASK;
+    uint8_t  ST_hit = 0;
+    int      sig_delta = 0;
+
+    SPP_DP (cout << "[ST] " << __func__ << " page: " << hex << page << " partial_page: " << partial_page << dec << endl;);
+
+    // Case 1: Hit
+    for (match = 0; match < ST_WAY; match++) {
+        if (valid[set][match] && (tag[set][match] == partial_page)) {
+            last_sig = sig[set][match];
+            delta = page_offset - last_offset[set][match];
+
+            if (delta) {
+                // Build a new sig based on 7-bit sign magnitude representation of delta
+                //sig_delta = (delta < 0) ? ((((-1) * delta) & 0x3F) + 0x40) : delta;
+                sig_delta = (delta < 0) ? (((-1) * delta) + (1 << (SIG_DELTA_BIT - 1))) : delta;
+                sig[set][match] = ((last_sig << SIG_SHIFT) ^ sig_delta) & SIG_MASK;
+                curr_sig = sig[set][match];
+                last_offset[set][match] = page_offset;
+
+                SPP_DP (
+                    cout << "[ST] " << __func__ << " hit set: " << set << " way: " << match;
+                    cout << " valid: " << valid[set][match] << " tag: " << hex << tag[set][match];
+                    cout << " last_sig: " << last_sig << " curr_sig: " << curr_sig;
+                    cout << " delta: " << dec << delta << " last_offset: " << page_offset << endl;
+                );
+            } else last_sig = 0; // Hitting the same cache line, delta is zero
+
+            ST_hit = 1;
+            break;
+        }
+    }
+
+    // Case 2: Invalid
+    if (match == ST_WAY) {
+        for (match = 0; match < ST_WAY; match++) {
+            if (valid[set][match] == 0) {
+                valid[set][match] = 1;
+                tag[set][match] = partial_page;
+                sig[set][match] = 0;
+                curr_sig = sig[set][match];
+                last_offset[set][match] = page_offset;
+
+                SPP_DP (
+                    cout << "[ST] " << __func__ << " invalid set: " << set << " way: " << match;
+                    cout << " valid: " << valid[set][match] << " tag: " << hex << partial_page;
+                    cout << " sig: " << sig[set][match] << " last_offset: " << dec << page_offset << endl;
+                );
+
+                break;
+            }
+        }
+    }
+
+    // Case 3: Miss
+    if (match == ST_WAY) {
+        for (match = 0; match < ST_WAY; match++) {
+            if (lru[set][match] == ST_WAY - 1) { // Find replacement victim
+                tag[set][match] = partial_page;
+                sig[set][match] = 0;
+                curr_sig = sig[set][match];
+                last_offset[set][match] = page_offset;
+
+                SPP_DP (
+                    cout << "[ST] " << __func__ << " miss set: " << set << " way: " << match;
+                    cout << " valid: " << valid[set][match] << " victim tag: " << hex << tag[set][match] << " new tag: " << partial_page;
+                    cout << " sig: " << sig[set][match] << " last_offset: " << dec << page_offset << endl;
+                );
+
+                break;
+            }
+        }
+
+        #ifdef SPP_SANITY_CHECK
+        // Assertion
+        if (match == ST_WAY) {
+            cout << "[ST] Cannot find a replacement victim!" << endl;
+            assert(0);
+        }
+        #endif
+    }
+
+#ifdef GHR_ON
+    if (ST_hit == 0) {
+        uint32_t GHR_found = GHR.pfb_check_entry(page_offset);
+        if (GHR_found < MAX_GHR_ENTRY) {
+            sig_delta = (GHR.delta[GHR_found] < 0) ? (((-1) * GHR.delta[GHR_found]) + (1 << (SIG_DELTA_BIT - 1))) : GHR.delta[GHR_found];
+            sig[set][match] = ((GHR.sig[GHR_found] << SIG_SHIFT) ^ sig_delta) & SIG_MASK;
+            curr_sig = sig[set][match];
+        }
+    }
+#endif
+
+    // Update LRU
+    for (uint32_t way = 0; way < ST_WAY; way++) {
+        if (lru[set][way] < lru[set][match]) {
+            lru[set][way]++;
+
+            #ifdef SPP_SANITY_CHECK
+            // Assertion
+            if (lru[set][way] >= ST_WAY) {
+                cout << "[ST] LRU value is wrong! set: " << set << " way: " << way << " lru: " << lru[set][way] << endl;
+                assert(0);
+            }
+            #endif
+        }
+    }
+    lru[set][match] = 0; // Promote to the MRU position
+}
+
+void PATTERN_TABLE::pfb_update_pattern(uint32_t last_sig, int curr_delta)
+{
+    // Update (sig, delta) correlation
+    uint32_t set = pfb_get_hash(last_sig) % PT_SET,
+             match = 0;
+
+    // Case 1: Hit
+    for (match = 0; match < PT_WAY; match++) {
+        if (delta[set][match] == curr_delta) {
+            c_delta[set][match]++;
+            c_sig[set]++;
+            if (c_sig[set] > C_SIG_MAX) {
+                for (uint32_t way = 0; way < PT_WAY; way++)
+                    c_delta[set][way] >>= 1;
+                c_sig[set] >>= 1;
+            }
+
+            SPP_DP (
+                cout << "[PT] " << __func__ << " hit sig: " << hex << last_sig << dec << " set: " << set << " way: " << match;
+                cout << " delta: " << delta[set][match] << " c_delta: " << c_delta[set][match] << " c_sig: " << c_sig[set] << endl;
+            );
+
+            break;
+        }
+    }
+
+    // Case 2: Miss
+    if (match == PT_WAY) {
+        uint32_t victim_way = PT_WAY,
+                 min_counter = C_SIG_MAX;
+
+        for (match = 0; match < PT_WAY; match++) {
+            if (c_delta[set][match] < min_counter) { // Select an entry with the minimum c_delta
+                victim_way = match;
+                min_counter = c_delta[set][match];
+            }
+        }
+
+        delta[set][victim_way] = curr_delta;
+        c_delta[set][victim_way] = 0;
+        c_sig[set]++;
+        if (c_sig[set] > C_SIG_MAX) {
+            for (uint32_t way = 0; way < PT_WAY; way++)
+                c_delta[set][way] >>= 1;
+            c_sig[set] >>= 1;
+        }
+
+        SPP_DP (
+            cout << "[PT] " << __func__ << " miss sig: " << hex << last_sig << dec << " set: " << set << " way: " << victim_way;
+            cout << " delta: " << delta[set][victim_way] << " c_delta: " << c_delta[set][victim_way] << " c_sig: " << c_sig[set] << endl;
+        );
+
+        #ifdef SPP_SANITY_CHECK
+        // Assertion
+        if (victim_way == PT_WAY) {
+            cout << "[PT] Cannot find a replacement victim!" << endl;
+            assert(0);
+        }
+        #endif
+    }
+}
+
+void PATTERN_TABLE::read_pattern(uint32_t curr_sig, int *delta_q, uint32_t *confidence_q, uint32_t &lookahead_way, uint32_t &lookahead_conf, uint32_t &pf_q_tail, uint32_t &depth)
+{
+    // Update (sig, delta) correlation
+    uint32_t set = pfb_get_hash(curr_sig) % PT_SET,
+             local_conf = 0,
+             pf_conf = 0,
+             max_conf = 0;
+
+    if (c_sig[set]) {
+        for (uint32_t way = 0; way < PT_WAY; way++) {
+            local_conf = (100 * c_delta[set][way]) / c_sig[set];
+            pf_conf = depth ? (GHR.global_accuracy * c_delta[set][way] / c_sig[set] * lookahead_conf / 100) : local_conf;
+
+            if (pf_conf >= PF_THRESHOLD) {
+                confidence_q[pf_q_tail] = pf_conf;
+                delta_q[pf_q_tail] = delta[set][way];
+
+                // Lookahead path follows the most confident entry
+                if (pf_conf > max_conf) {
+                    lookahead_way = way;
+                    max_conf = pf_conf;
+                }
+                pf_q_tail++;
+
+                SPP_DP (
+                    cout << "[PT] " << __func__ << " HIGH CONF: " << pf_conf << " sig: " << hex << curr_sig << dec << " set: " << set << " way: " << way;
+                    cout << " delta: " << delta[set][way] << " c_delta: " << c_delta[set][way] << " c_sig: " << c_sig[set];
+                    cout << " conf: " << local_conf << " depth: " << depth << endl;
+                );
+            } else {
+                SPP_DP (
+                    cout << "[PT] " << __func__ << "  LOW CONF: " << pf_conf << " sig: " << hex << curr_sig << dec << " set: " << set << " way: " << way;
+                    cout << " delta: " << delta[set][way] << " c_delta: " << c_delta[set][way] << " c_sig: " << c_sig[set];
+                    cout << " conf: " << local_conf << " depth: " << depth << endl;
+                );
+            }
+        }
+        lookahead_conf = max_conf;
+        if (lookahead_conf >= PF_THRESHOLD) depth++;
+
+        SPP_DP (cout << "global_accuracy: " << GHR.global_accuracy << " lookahead_conf: " << lookahead_conf << endl;);
+    } else confidence_q[pf_q_tail] = 0;
+}
+
+bool PREFETCH_FILTER::pfb_check(uint64_t check_addr, FILTER_REQUEST filter_request)
+{
+    uint64_t cache_line = check_addr >> LOG2_BLOCK_SIZE,
+             hash = pfb_get_hash(cache_line),
+             quotient = (hash >> REMAINDER_BIT) & ((1 << QUOTIENT_BIT) - 1),
+             remainder = hash % (1 << REMAINDER_BIT);
+
+    SPP_DP (
+        cout << "[FILTER] check_addr: " << hex << check_addr << " check_cache_line: " << (check_addr >> LOG2_BLOCK_SIZE);
+        cout << " hash: " << hash << dec << " quotient: " << quotient << " remainder: " << remainder << endl;
+    );
+
+    switch (filter_request) {
+        case SPP_L2C_PREFETCH:
+            if ((valid[quotient] || useful[quotient]) && remainder_tag[quotient] == remainder) { 
+                SPP_DP (
+                    cout << "[FILTER] " << __func__ << " line is already in the filter check_addr: " << hex << check_addr << " cache_line: " << cache_line << dec;
+                    cout << " quotient: " << quotient << " valid: " << valid[quotient] << " useful: " << useful[quotient] << endl; 
+                );
+
+                return false; // False return indicates "Do not prefetch"
+            } else {
+                valid[quotient] = 1;  // Mark as prefetched
+                useful[quotient] = 0; // Reset useful bit
+                remainder_tag[quotient] = remainder;
+
+                SPP_DP (
+                    cout << "[FILTER] " << __func__ << " set valid for check_addr: " << hex << check_addr << " cache_line: " << cache_line << dec;
+                    cout << " quotient: " << quotient << " remainder_tag: " << remainder_tag[quotient] << " valid: " << valid[quotient] << " useful: " << useful[quotient] << endl; 
+                );
+            }
+            break;
+
+        case SPP_LLC_PREFETCH:
+            if ((valid[quotient] || useful[quotient]) && remainder_tag[quotient] == remainder) { 
+                SPP_DP (
+                    cout << "[FILTER] " << __func__ << " line is already in the filter check_addr: " << hex << check_addr << " cache_line: " << cache_line << dec;
+                    cout << " quotient: " << quotient << " valid: " << valid[quotient] << " useful: " << useful[quotient] << endl; 
+                );
+
+                return false; // False return indicates "Do not prefetch"
+            } else {
+                // NOTE: SPP_LLC_PREFETCH has relatively low confidence (FILL_THRESHOLD <= SPP_LLC_PREFETCH < PF_THRESHOLD) 
+                // Therefore, it is safe to prefetch this cache line in the large LLC and save precious L2C capacity
+                // If this prefetch request becomes more confident and SPP eventually issues SPP_L2C_PREFETCH,
+                // we can get this cache line immediately from the LLC (not from DRAM)
+                // To allow this fast prefetch from LLC, SPP does not set the valid bit for SPP_LLC_PREFETCH
+
+                //valid[quotient] = 1;
+                //useful[quotient] = 0;
+
+                SPP_DP (
+                    cout << "[FILTER] " << __func__ << " don't set valid for check_addr: " << hex << check_addr << " cache_line: " << cache_line << dec;
+                    cout << " quotient: " << quotient << " valid: " << valid[quotient] << " useful: " << useful[quotient] << endl; 
+                );
+            }
+            break;
+
+        case L2C_DEMAND:
+            if ((remainder_tag[quotient] == remainder) && (useful[quotient] == 0)) {
+                useful[quotient] = 1;
+                if (valid[quotient]) GHR.pf_useful++; // This cache line was prefetched by SPP and actually used in the program
+
+                SPP_DP (
+                    cout << "[FILTER] " << __func__ << " set useful for check_addr: " << hex << check_addr << " cache_line: " << cache_line << dec;
+                    cout << " quotient: " << quotient << " valid: " << valid[quotient] << " useful: " << useful[quotient];
+                    cout << " GHR.pf_issued: " << GHR.pf_issued << " GHR.pf_useful: " << GHR.pf_useful << endl; 
+                );
+            }
+            break;
+
+        case L2C_EVICT:
+            // Decrease global pf_useful counter when there is a useless prefetch (prefetched but not used)
+            if (valid[quotient] && !useful[quotient] && GHR.pf_useful) GHR.pf_useful--;
+
+            // Reset filter entry
+            valid[quotient] = 0;
+            useful[quotient] = 0;
+            remainder_tag[quotient] = 0;
+            break;
+
+        default:
+            // Assertion
+            cout << "[FILTER] Invalid filter request type: " << filter_request << endl;
+            assert(0);
+    }
+
+    return true;
+}
+
+void GLOBAL_REGISTER::pfb_update_entry(uint32_t pf_sig, uint32_t pf_confidence, uint32_t pf_offset, int pf_delta) 
+{
+    // NOTE: GHR implementation is slightly different from the original paper
+    // Instead of matching (last_offset + delta), GHR simply stores and matches the pf_offset
+    uint32_t min_conf = 100,
+             victim_way = MAX_GHR_ENTRY;
+
+    SPP_DP (
+        cout << "[GHR] Crossing the page boundary pf_sig: " << hex << pf_sig << dec;
+        cout << " confidence: " << pf_confidence << " pf_offset: " << pf_offset << " pf_delta: " << pf_delta << endl;
+    );
+
+    for (uint32_t i = 0; i < MAX_GHR_ENTRY; i++) {
+        //if (sig[i] == pf_sig) { // TODO: Which one is better and consistent?
+            // If GHR already holds the same pf_sig, update the GHR entry with the latest info
+        if (valid[i] && (offset[i] == pf_offset)) {
+            // If GHR already holds the same pf_offset, update the GHR entry with the latest info
+            sig[i] = pf_sig;
+            confidence[i] = pf_confidence;
+            //offset[i] = pf_offset;
+            delta[i] = pf_delta;
+
+            SPP_DP (cout << "[GHR] Found a matching index: " << i << endl;);
+
+            return;
+        }
+
+        // GHR replacement policy is based on the stored confidence value
+        // An entry with the lowest confidence is selected as a victim
+        if (confidence[i] < min_conf) {
+            min_conf = confidence[i];
+            victim_way = i;
+        }
+    }
+
+    // Assertion
+    if (victim_way >= MAX_GHR_ENTRY) {
+        cout << "[GHR] Cannot find a replacement victim!" << endl;
+        assert(0);
+    }
+
+    SPP_DP (
+        cout << "[GHR] Replace index: " << victim_way << " pf_sig: " << hex << sig[victim_way] << dec;
+        cout << " confidence: " << confidence[victim_way] << " pf_offset: " << offset[victim_way] << " pf_delta: " << delta[victim_way] << endl;
+    );
+
+    valid[victim_way] = 1;
+    sig[victim_way] = pf_sig;
+    confidence[victim_way] = pf_confidence;
+    offset[victim_way] = pf_offset;
+    delta[victim_way] = pf_delta;
+}
+
+uint32_t GLOBAL_REGISTER::pfb_check_entry(uint32_t page_offset)
+{
+    uint32_t max_conf = 0,
+             max_conf_way = MAX_GHR_ENTRY;
+
+    for (uint32_t i = 0; i < MAX_GHR_ENTRY; i++) {
+        if ((offset[i] == page_offset) && (max_conf < confidence[i])) {
+            max_conf = confidence[i];
+            max_conf_way = i;
+        }
+    }
+
+    return max_conf_way;
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////////bo.cc
+
+//#define HYBRID
+class Table
+{
+public:
+  Table(int width, int height) : width(width), height(height), cells(height, vector<string>(width)) {}
+
+  void set_row(int row, const vector<string>& data, int start_col = 0)
+  {
+    assert(data.size() + start_col == this->width);
+    for (unsigned col = start_col; col < this->width; col += 1)
+      this->set_cell(row, col, data[col]);
+  }
+
+  void set_col(int col, const vector<string>& data, int start_row = 0)
+  {
+    assert(data.size() + start_row == this->height);
+    for (unsigned row = start_row; row < this->height; row += 1)
+      this->set_cell(row, col, data[row]);
+  }
+
+  void set_cell(int row, int col, string data)
+  {
+    assert(0 <= row && row < (int)this->height);
+    assert(0 <= col && col < (int)this->width);
+    this->cells[row][col] = data;
+  }
+
+  void set_cell(int row, int col, double data)
+  {
+    this->oss.str("");
+    this->oss << setw(11) << fixed << setprecision(8) << data;
+    this->set_cell(row, col, this->oss.str());
+  }
+
+  void set_cell(int row, int col, int64_t data)
+  {
+    this->oss.str("");
+    this->oss << setw(11) << std::left << data;
+    this->set_cell(row, col, this->oss.str());
+  }
+
+  void set_cell(int row, int col, int data) { this->set_cell(row, col, (int64_t)data); }
+
+  void set_cell(int row, int col, uint64_t data) { this->set_cell(row, col, (int64_t)data); }
+
+  string to_string()
+  {
+    vector<int> widths;
+    for (unsigned i = 0; i < this->width; i += 1) {
+      int max_width = 0;
+      for (unsigned j = 0; j < this->height; j += 1)
+        max_width = max(max_width, (int)this->cells[j][i].size());
+      widths.push_back(max_width + 2);
+    }
+    string out;
+    out += Table::top_line(widths);
+    out += this->data_row(0, widths);
+    for (unsigned i = 1; i < this->height; i += 1) {
+      out += Table::mid_line(widths);
+      out += this->data_row(i, widths);
+    }
+    out += Table::bot_line(widths);
+    return out;
+  }
+
+  string data_row(int row, const vector<int>& widths)
+  {
+    string out;
+    for (unsigned i = 0; i < this->width; i += 1) {
+      string data = this->cells[row][i];
+      data.resize(widths[i] - 2, ' ');
+      out += " | " + data;
+    }
+    out += " |\n";
+    return out;
+  }
+
+  static string top_line(const vector<int>& widths) { return Table::line(widths, "┌", "┬", "┐"); }
+
+  static string mid_line(const vector<int>& widths) { return Table::line(widths, "├", "┼", "┤"); }
+
+  static string bot_line(const vector<int>& widths) { return Table::line(widths, "└", "┴", "┘"); }
+
+  static string line(const vector<int>& widths, string left, string mid, string right)
+  {
+    string out = " " + left;
+    for (unsigned i = 0; i < widths.size(); i += 1) {
+      int w = widths[i];
+      for (int j = 0; j < w; j += 1)
+        out += "─";
+      if (i != widths.size() - 1)
+        out += mid;
+      else
+        out += right;
+    }
+    return out + "\n";
+  }
+
+private:
+  unsigned width;
+  unsigned height;
+  vector<vector<string>> cells;
+  ostringstream oss;
+};
+
+template <class T>
+class InfiniteCache
+{
+public:
+  class Entry
+  {
+  public:
+    uint64_t key;
+    uint64_t index;
+    uint64_t tag;
+    bool valid;
+    T data;
+  };
+
+  Entry* erase(uint64_t key)
+  {
+    Entry* entry = this->find(key);
+    if (!entry)
+      return nullptr;
+    entry->valid = false;
+    this->last_erased_entry = *entry;
+    int num_erased = this->entries.erase(key);
+    assert(num_erased == 1);
+    return &this->last_erased_entry;
+  }
+
+  /**
+   * @return The old state of the entry that was written to.
+   */
+  Entry insert(uint64_t key, const T& data)
+  {
+    Entry* entry = this->find(key);
+    if (entry != nullptr) {
+      Entry old_entry = *entry;
+      entry->data = data;
+      return old_entry;
+    }
+    entries[key] = {key, 0, key, true, data};
+    return {};
+  }
+
+  Entry* find(uint64_t key)
+  {
+    auto it = this->entries.find(key);
+    if (it == this->entries.end())
+      return nullptr;
+    Entry& entry = (*it).second;
+    assert(entry.tag == key && entry.valid);
+    return &entry;
+  }
+
+  /**
+   * For debugging purposes.
+   */
+  string log(vector<string> headers, function<void(Entry&, Table&, int)> write_data)
+  {
+    Table table(headers.size(), entries.size() + 1);
+    table.set_row(0, headers);
+    unsigned i = 0;
+    for (auto& x : this->entries)
+      write_data(x.second, table, ++i);
+    return table.to_string();
+  }
+
+  void set_debug_mode(bool enable) { this->debug = enable; }
+
+protected:
+  Entry last_erased_entry;
+  unordered_map<uint64_t, Entry> entries;
+  bool debug = false;
+};
+
+template <class T>
+class SetAssociativeCache
+{
+public:
+  class Entry
+  {
+  public:
+    uint64_t key;
+    uint64_t index;
+    uint64_t tag;
+    bool valid;
+    T data;
+  };
+
+  SetAssociativeCache(int size, int num_ways)
+      : size(size), num_ways(num_ways), num_sets(size / num_ways), entries(num_sets, vector<Entry>(num_ways)), cams(num_sets)
+  {
+    assert(size % num_ways == 0);
+    for (int i = 0; i < num_sets; i += 1)
+      for (int j = 0; j < num_ways; j += 1)
+        entries[i][j].valid = false;
+  }
+
+  Entry* erase(uint64_t key)
+  {
+    Entry* entry = this->find(key);
+    uint64_t index = key % this->num_sets;
+    uint64_t tag = key / this->num_sets;
+    auto& cam = cams[index];
+    int num_erased = cam.erase(tag);
+    if (entry)
+      entry->valid = false;
+    assert(entry ? num_erased == 1 : num_erased == 0);
+    return entry;
+  }
+
+  /**
+   * @return The old state of the entry that was written to.
+   */
+  Entry insert(uint64_t key, const T& data)
+  {
+    Entry* entry = this->find(key);
+    if (entry != nullptr) {
+      Entry old_entry = *entry;
+      entry->data = data;
+      return old_entry;
+    }
+    uint64_t index = key % this->num_sets;
+    uint64_t tag = key / this->num_sets;
+    vector<Entry>& set = this->entries[index];
+    int victim_way = -1;
+    for (int i = 0; i < this->num_ways; i += 1)
+      if (!set[i].valid) {
+        victim_way = i;
+        break;
+      }
+    if (victim_way == -1) {
+      victim_way = this->select_victim(index);
+    }
+    Entry& victim = set[victim_way];
+    Entry old_entry = victim;
+    victim = {key, index, tag, true, data};
+    auto& cam = cams[index];
+    if (old_entry.valid) {
+      int num_erased = cam.erase(old_entry.tag);
+      assert(num_erased == 1);
+    }
+    cam[tag] = victim_way;
+    return old_entry;
+  }
+
+  Entry* find(uint64_t key)
+  {
+    uint64_t index = key % this->num_sets;
+    uint64_t tag = key / this->num_sets;
+    auto& cam = cams[index];
+    if (cam.find(tag) == cam.end())
+      return nullptr;
+    int way = cam[tag];
+    Entry& entry = this->entries[index][way];
+    assert(entry.tag == tag && entry.valid);
+    return &entry;
+  }
+
+  /**
+   * For debugging purposes.
+   */
+  string log(vector<string> headers, function<void(Entry&, Table&, int)> write_data)
+  {
+    vector<Entry> valid_entries = this->get_valid_entries();
+    Table table(headers.size(), valid_entries.size() + 1);
+    table.set_row(0, headers);
+    for (unsigned i = 0; i < valid_entries.size(); i += 1)
+      write_data(valid_entries[i], table, i + 1);
+    return table.to_string();
+  }
+
+  void set_debug_mode(bool enable) { this->debug = enable; }
+
+protected:
+  /**
+   * @return The way of the selected victim.
+   */
+  virtual int select_victim(uint64_t index)
+  {
+    /* random eviction policy if not overriden */
+    return rand() % this->num_ways;
+  }
+
+  vector<Entry> get_valid_entries()
+  {
+    vector<Entry> valid_entries;
+    for (int i = 0; i < num_sets; i += 1)
+      for (int j = 0; j < num_ways; j += 1)
+        if (entries[i][j].valid)
+          valid_entries.push_back(entries[i][j]);
+    return valid_entries;
+  }
+
+  int size;
+  int num_ways;
+  int num_sets;
+  vector<vector<Entry>> entries;
+  vector<unordered_map<uint64_t, int>> cams;
+  bool debug = false;
+};
+
+template <class T>
+class LRUSetAssociativeCache : public SetAssociativeCache<T>
+{
+  typedef SetAssociativeCache<T> Super;
+
+public:
+  LRUSetAssociativeCache(int size, int num_ways) : Super(size, num_ways), lru(this->num_sets, vector<uint64_t>(num_ways)) {}
+
+  void set_mru(uint64_t key) { *this->get_lru(key) = this->t++; }
+
+  void set_lru(uint64_t key) { *this->get_lru(key) = 0; }
+
+protected:
+  /* @override */
+  int select_victim(uint64_t index)
+  {
+    vector<uint64_t>& lru_set = this->lru[index];
+    return min_element(lru_set.begin(), lru_set.end()) - lru_set.begin();
+  }
+
+  uint64_t* get_lru(uint64_t key)
+  {
+    uint64_t index = key % this->num_sets;
+    uint64_t tag = key / this->num_sets;
+    int way = this->cams[index][tag];
+    return &this->lru[index][way];
+  }
+
+  vector<vector<uint64_t>> lru;
+  uint64_t t = 0;
+};
+
+template <class T>
+class NMRUSetAssociativeCache : public SetAssociativeCache<T>
+{
+  typedef SetAssociativeCache<T> Super;
+
+public:
+  NMRUSetAssociativeCache(int size, int num_ways) : Super(size, num_ways), mru(this->num_sets) {}
+
+  void set_mru(uint64_t key)
+  {
+    uint64_t index = key % this->num_sets;
+    uint64_t tag = key / this->num_sets;
+    int way = this->cams[index][tag];
+    this->mru[index] = way;
+  }
+
+protected:
+  /* @override */
+  int select_victim(uint64_t index)
+  {
+    int way = rand() % (this->num_ways - 1);
+    if (way >= mru[index])
+      way += 1;
+    return way;
+  }
+
+  vector<int> mru;
+};
+
+template <class T>
+class LRUFullyAssociativeCache : public LRUSetAssociativeCache<T>
+{
+  typedef LRUSetAssociativeCache<T> Super;
+
+public:
+  LRUFullyAssociativeCache(int size) : Super(size, size) {}
+};
+
+template <class T>
+class NMRUFullyAssociativeCache : public NMRUSetAssociativeCache<T>
+{
+  typedef NMRUSetAssociativeCache<T> Super;
+
+public:
+  NMRUFullyAssociativeCache(int size) : Super(size, size) {}
+};
+
+template <class T>
+class DirectMappedCache : public SetAssociativeCache<T>
+{
+  typedef SetAssociativeCache<T> Super;
+
+public:
+  DirectMappedCache(int size) : Super(size, 1) {}
+};
+
+/** End Of Cache Framework **/
+
+class RecentRequestsTableData
+{
+public:
+  uint64_t base_address;
+};
+
+class RecentRequestsTable : public DirectMappedCache<RecentRequestsTableData>
+{
+  typedef DirectMappedCache<RecentRequestsTableData> Super;
+
+public:
+  RecentRequestsTable(int size) : Super(size)
+  {
+    assert(__builtin_popcount(size) == 1);
+    this->hash_w = __builtin_ctz(size);
+  }
+
+  Entry insert(uint64_t base_address)
+  {
+    uint64_t key = this->hash(base_address);
+    return Super::insert(key, {base_address});
+  }
+
+  bool find(uint64_t base_address)
+  {
+    uint64_t key = this->hash(base_address);
+    return (Super::find(key) != nullptr);
+  }
+
+  string log()
+  {
+    vector<string> headers({"Hash", "Base Address"});
+    return Super::log(headers, this->write_data);
+  }
+
+private:
+  static void write_data(Entry& entry, Table& table, int row)
+  {
+    table.set_cell(row, 0, bitset<20>(entry.key).to_string());
+    table.set_cell(row, 1, entry.data.base_address);
+  }
+
+  /* The RR table is accessed through a simple hash function. For instance, for a 256-entry RR table, we XOR the 8
+   * least significant line address bits with the next 8 bits to obtain the table index. For 12-bit tags, we skip the
+   * 8 least significant line address bits and extract the next 12 bits. */
+  uint64_t hash(uint64_t input)
+  {
+    int next_w_bits = ((1 << hash_w) - 1) & (input >> hash_w);
+    uint64_t output = ((1 << 20) - 1) & (next_w_bits ^ input);
+    if (this->debug) {
+      cerr << "[RR] hash( " << bitset<32>(input).to_string() << " ) = " << bitset<20>(output).to_string() << endl;
+    }
+    return output;
+  }
+
+  int hash_w;
+};
+
+class BestOffsetLearning
+{
+public:
+  BestOffsetLearning(int blocks_in_page) : blocks_in_page(blocks_in_page)
+  {
+    /* Useful offset values depend on the memory page size, as the BO prefetcher does not prefetch across page
+     * boundaries. For instance, assuming 4KB pages and 64B lines, a page contains 64 lines, and there is no point
+     * in considering offset values greater than 63. However, it may be useful to consider offsets greater than 63
+     * for systems having superpages. */
+    /* We propose a method for offset sampling that is algorithmic and not totally arbitrary: we include in our list
+     * all the offsets between 1 and 256 whose prime factorization does not contain primes greater than 5. */
+    /* Nothing prevents a BO prefetcher to use negative offset values. Although some applications might benefit from
+     * negative offsets, we did not observe any benefit in our experiments. Hence we consider only positive offsets
+     * in this study. */
+    for (int i = 1; i < blocks_in_page; i += 1) {
+      int n = i;
+      for (int j = 2; j <= 5; j += 1)
+        while (n % j == 0)
+          n /= j;
+      if (n == 1)
+        offset_list.push_back({i, 0});
+    }
+  }
+
+  /**
+   * @return The current best offset.
+   */
+  int test_offset(uint64_t block_number, RecentRequestsTable& recent_requests_table)
+  {
+    int page_offset = block_number % this->blocks_in_page;
+    Entry& entry = this->offset_list[this->index_to_test];
+    bool found = is_inside_page(page_offset - entry.offset) && recent_requests_table.find(block_number - entry.offset);
+    if (this->debug) {
+      cerr << "[BOL] testing offset=" << entry.offset << " with score=" << entry.score << endl;
+      cerr << "[BOL] match=" << found << endl;
+    }
+    if (found) {
+      entry.score += 1;
+      if (entry.score > this->best_score) {
+        this->best_score = entry.score;
+        this->local_best_offset = entry.offset;
+      }
+    }
+    this->index_to_test = (this->index_to_test + 1) % this->offset_list.size();
+    /* test round termination */
+    if (this->index_to_test == 0) {
+      if (this->debug) {
+        cerr << "[BOL] round=" << this->round << " finished" << endl;
+      }
+      this->round += 1;
+      /* The current learning phase finishes at the end of a round when either of the two following events happens
+       * first: one of the scores equals SCOREMAX, or the number of rounds equals ROUNDMAX (a fixed parameter). */
+      if (this->best_score >= SCORE_MAX || this->round == ROUND_MAX) {
+        if (this->best_score <= BAD_SCORE)
+          this->global_best_offset = 0; /* turn off prefetching */
+        else
+          this->global_best_offset = this->local_best_offset;
+        if (this->debug) {
+          cerr << "[BOL] learning phase finished, winner=" << this->global_best_offset << endl;
+          cerr << this->log();
+        }
+        /* reset all internal state */
+        for (auto& entry : this->offset_list)
+          entry.score = 0;
+        this->local_best_offset = 0;
+        this->best_score = 0;
+        this->round = 0;
+      }
+    }
+    return this->global_best_offset;
+  }
+
+  string log()
+  {
+    Table table(2, offset_list.size() + 1);
+    table.set_row(0, {"Offset", "Score"});
+    for (unsigned i = 0; i < offset_list.size(); i += 1) {
+      table.set_cell(i + 1, 0, offset_list[i].offset);
+      table.set_cell(i + 1, 1, offset_list[i].score);
+    }
+    return table.to_string();
+  }
+
+  void set_debug_mode(bool enable) { this->debug = enable; }
+
+private:
+  bool is_inside_page(int page_offset) { return (0 <= page_offset && page_offset < this->blocks_in_page); }
+
+  class Entry
+  {
+  public:
+    int offset;
+    int score;
+  };
+
+  int blocks_in_page;
+  vector<Entry> offset_list;
+
+  int round = 0;
+  int best_score = 0;
+  int index_to_test = 0;
+  int local_best_offset = 0;
+  int global_best_offset = 1;
+
+  const int SCORE_MAX = 31;
+  const int ROUND_MAX = 100;
+  const int BAD_SCORE = 1;
+
+  bool debug = false;
+};
+
+class BOP
+{
+public:
+  BOP(int blocks_in_page, int recent_requests_table_size, int degree)
+      : blocks_in_page(blocks_in_page), best_offset_learning(blocks_in_page), recent_requests_table(recent_requests_table_size), degree(degree)
+  {
+  }
+
+  /**
+   * @return A vector of block numbers that should be prefetched.
+   */
+  vector<uint64_t> access(uint64_t block_number)
+  {
+    uint64_t page_number = block_number / this->blocks_in_page;
+    int page_offset = block_number % this->blocks_in_page;
+    /* ... and if X and X + D lie in the same memory page, a prefetch request for line X + D is sent to the L3
+     * cache. */
+    if (this->debug) {
+      cerr << "[BOP] block_number=" << block_number << endl;
+      cerr << "[BOP] page_number=" << page_number << endl;
+      cerr << "[BOP] page_offset=" << page_offset << endl;
+      cerr << "[BOP] best_offset=" << this->prefetch_offset << endl;
+    }
+
+    vector<uint64_t> pred;
+    for (int i = 1; i <= this->degree; i += 1) {
+      if (this->prefetch_offset != 0 && is_inside_page(page_offset + i * this->prefetch_offset))
+        pred.push_back(block_number + i * this->prefetch_offset);
+      else {
+        if (this->debug)
+          cerr << "[BOP] X and X + " << i << " * D do not lie in the same memory page, no prefetch issued" << endl;
+        break;
+      }
+    }
+
+    int old_offset = this->prefetch_offset;
+    /* On every eligible L2 read access (miss or prefetched hit), we test an offset di from the list. */
+    this->prefetch_offset = this->best_offset_learning.test_offset(block_number, recent_requests_table);
+    if (this->debug) {
+      if (old_offset != this->prefetch_offset)
+        cerr << "[BOP] offset changed from " << old_offset << " to " << this->prefetch_offset << endl;
+      cerr << this->recent_requests_table.log();
+      cerr << this->best_offset_learning.log();
+    }
+    return pred;
+  }
+
+  void cache_fill(uint64_t block_number, bool prefetch)
+  {
+    int page_offset = block_number % this->blocks_in_page;
+    if (this->prefetch_offset == 0 && prefetch)
+      return;
+    if (this->prefetch_offset != 0 && !prefetch)
+      return;
+    if (!this->is_inside_page(page_offset - this->prefetch_offset))
+      return;
+    this->recent_requests_table.insert(block_number - this->prefetch_offset);
+  }
+
+  void set_debug_level(int debug_level)
+  {
+    bool enable = (bool)debug_level;
+    this->debug = enable;
+    this->best_offset_learning.set_debug_mode(enable);
+    this->recent_requests_table.set_debug_mode(enable);
+  }
+
+private:
+  bool is_inside_page(int page_offset) { return (0 <= page_offset && page_offset < this->blocks_in_page); }
+
+  int blocks_in_page;
+  int prefetch_offset = 0;
+
+  BestOffsetLearning best_offset_learning;
+  RecentRequestsTable recent_requests_table;
+  int degree;
+
+  bool debug = false;
+};
+
+/* BOP settings */
+const int RR_TABLE_SIZE = 256;
+// const int DEGREE = 4;
+
+vector<BOP> bo_prefechers;
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////domino.cc
+
+struct EIT_Entry
+{
+    map<uint64_t, uint64_t> address_pointer_pair;
+    map<uint64_t, uint64_t> access_time;
+    uint64_t timer;
+    uint64_t most_recent_addr;
+
+    EIT_Entry()
+    {
+        timer = 0;  
+        most_recent_addr = 0;
+        address_pointer_pair.clear();
+        access_time.clear();
+    }
+
+    uint64_t get_ghb_pointer(uint64_t curr_addr)
+    {
+        if(address_pointer_pair.find(curr_addr) != address_pointer_pair.end())
+            return address_pointer_pair[curr_addr];
+    
+        assert(address_pointer_pair.find(most_recent_addr) != address_pointer_pair.end());
+        return address_pointer_pair[most_recent_addr];
+    }
+
+    void remove_oldest()
+    {
+        uint64_t oldest = timer+1;
+        uint64_t replace_addr;
+        for(map<uint64_t, uint64_t>::iterator it=access_time.begin(); it != access_time.end(); it++)
+        {
+            if(it->second < oldest)
+            {
+                oldest = it->second;
+                replace_addr = it->first;
+            }
+        }
+        assert(oldest < (timer+1));
+        assert(address_pointer_pair.find(replace_addr) != address_pointer_pair.end());
+        address_pointer_pair.erase(replace_addr);
+        access_time.erase(replace_addr);
+    }
+
+    void update(uint64_t curr_addr, uint64_t pointer)
+    {
+        timer++;
+#ifdef EIT_ENTRY_LIMIT
+        if(address_pointer_pair.find(curr_addr) == address_pointer_pair.end())
+            if(address_pointer_pair.size() >= 3)
+                remove_oldest();
+       
+        assert(address_pointer_pair.size() <= 3); 
+        assert(access_time.size() <= 3); 
+#endif
+        address_pointer_pair[curr_addr] = pointer;
+        access_time[curr_addr] = timer;
+        most_recent_addr = curr_addr;
+    }
+};
+
+struct Domino_prefetcher_t
+{
+    vector<uint64_t> GHB;
+    map<uint64_t, EIT_Entry> index_table;
+    uint64_t last_address;
+
+    void domino_train(uint64_t curr_addr, uint64_t last_addr)
+    {
+        GHB.push_back(curr_addr);
+        assert(GHB.size() >= 1);
+
+        index_table[last_addr].update(curr_addr, (GHB.size() - 1));
+    }
+
+    vector<uint64_t> domino_predict(uint64_t curr_addr, uint64_t last_addr)
+    {
+        vector<uint64_t> candidates;
+        candidates.clear();
+
+        if(index_table.find(last_addr) != index_table.end())
+        {
+            uint64_t index = index_table[last_addr].get_ghb_pointer(curr_addr);
+
+            for(unsigned int i=1; i<=32; i++)
+            {
+                if((index+i) >= GHB.size())
+                    break;
+                uint64_t candidate_phy_addr = GHB[index+i];
+                candidates.push_back(candidate_phy_addr);
+            }
+        }
+        else
+            no_prediction++;
+
+        return candidates;
+    }
+
+    public :
+    Domino_prefetcher_t()
+    {
+        last_address = 0;
+        GHB.clear();
+        index_table.clear();
+    }
+};
+
+Domino_prefetcher_t domino[NUM_CPUS];
+
+/////////////////////////////////////////////////////////////////////////////////////////////////////interface
+
+#define CONFIDENCE_WINDOW_SIZE 4096
+#define INSTRUCTION_WINDOW_SIZE 1
+#define PREFETCHER_NUM 4
+
+struct Confidence_Buffer{
+    uint64_t confidence_window[PREFETCHER_NUM][CONFIDENCE_WINDOW_SIZE];
+    uint64_t instruction_hit[PREFETCHER_NUM][INSTRUCTION_WINDOW_SIZE];
+    int confidence[PREFETCHER_NUM];
+    int end_pointer[PREFETCHER_NUM];
+    int end_pointer_instruction[PREFETCHER_NUM];
+    // int temp_confidence[PREFETCHER_NUM];
+}confidence_buffer;
+
+
+void  prefetcher_initialize_domino()
+{
+    pfb_total_access = 0;
+    pfb_predictions = 0;
+    no_prediction = 0;
+ //   myfile.open ("domino_file.txt");
+
+}
+
+void  prefetcher_initialize_bo()
+{
+  /* create prefetcher for all cores */
+  bo_prefechers = vector<BOP>(NUM_CPUS, BOP(PAGE_SIZE / BLOCK_SIZE, RR_TABLE_SIZE, PREFETCH_DEGREE));
+}
+
+void  prefetcher_initialize_spp() 
+{
+//myfile.open ("spp_file.txt");
+}
+
+void  prefetcher_initialize_vldp()
+{
+//    myfile.open ("vldp_file.txt");
+    /* create prefetcher for all cores */
+    pfb_prefetchers = vector<VLDP>(NUM_CPUS, VLDP(PAGE_SIZE >> LOG2_BLOCK_SIZE, PREFETCH_DEGREE, DHB_SIZE, OPT_SIZE, DPT_SIZE));
+}
+
+void CACHE::pfb_prefetcher_initialize()
+{
+    memset((void*)&confidence_buffer, 0, sizeof(Confidence_Buffer));
+    prefetcher_initialize_domino();
+    prefetcher_initialize_bo();
+    prefetcher_initialize_spp();
+    prefetcher_initialize_vldp();
+}
+
+
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+// uint32_t  prefetcher_cache_operate_domino(uint64_t addr, uint64_t ip, uint8_t cache_hit, uint8_t type, uint32_t metadata_in)
+// {
+//     if (type != LOAD)
+//         return metadata_in;
+
+//     // if(cache_hit)
+//     //    return metadata_in;
+
+//     uint64_t addr_B = (addr >> 6) << 6;
+
+//     if(addr_B == domino[cpu].last_address)
+//         return metadata_in;
+
+//     pfb_total_access++;
+
+//     //Predict before training
+//     vector<uint64_t> candidates = domino[cpu].domino_predict(addr_B, domino[cpu].last_address);
+
+//     int num_prefetched = 0;
+//     uint64_t candidates_out;
+//     for(unsigned int i=0; i<candidates.size(); i++)
+//     {
+//         candidates_out=candidates[i];
+//         int ret = prefetch_line(ip, addr, candidates[i], FILL_THIS, 0);
+// //           myfile << dec<<instr_id << " " <<hex<<candidates_out<<endl;
+//     //if (ret == 1)
+//     //{
+//         pfb_predictions++;
+//         num_prefetched++;
+//         //}
+//         if(num_prefetched >= DEGREE)
+//             break;
+//     }
+
+//     domino[cpu].domino_train(addr_B, domino[cpu].last_address);
+    
+//     domino[cpu].last_address = addr_B;
+
+//     return metadata_in;
+// }
+
+
+// uint32_t  prefetcher_cache_operate_bo(uint64_t addr, uint64_t ip, uint8_t cache_hit, uint8_t type, uint32_t metadata_in)
+// {
+//     uint64_t block_number = addr >> LOG2_BLOCK_SIZE;
+//     uint32_t set = get_set(block_number);
+//     uint32_t way = get_way(block_number, set);
+//     uint8_t prefetch = block[set * NUM_WAY + way].prefetch;
+
+//     /* check prefetch hit */
+//     bool prefetch_hit = false;
+//     if (cache_hit == 1 && prefetch == 1)
+//       prefetch_hit = true;
+
+//     /* check trigger access */
+//     bool trigger_access = false;
+//     if (cache_hit == 0 || prefetch_hit)
+//       trigger_access = true;
+
+//     if (!trigger_access)
+//       return metadata_in;
+//     ;
+
+//     /* call prefetcher and send prefetches */
+//     vector<uint64_t> to_prefetch = bo_prefechers[cpu].access(block_number);
+//     for (auto& pf_block_number : to_prefetch) {
+//       uint64_t pf_address = pf_block_number << LOG2_BLOCK_SIZE;
+//       /* champsim automatically ignores prefetches that cross page boundaries */
+//       prefetch_line(ip, addr, pf_address, FILL_THIS, 0);
+//     }
+//     return metadata_in;
+// }
+
+// uint32_t  prefetcher_cache_operate_spp(uint64_t addr, uint64_t ip, uint8_t cache_hit, uint8_t type, uint32_t metadata_in)
+// {
+//     uint64_t page = addr >> LOG2_PAGE_SIZE;
+//     uint32_t page_offset = (addr >> LOG2_BLOCK_SIZE) & (PAGE_SIZE / BLOCK_SIZE - 1),
+//              last_sig = 0,
+//              curr_sig = 0,
+//              confidence_q[MSHR_SIZE],
+//              depth = 0;
+
+//     int32_t  delta = 0,
+//              delta_q[MSHR_SIZE];
+
+//     for (uint32_t i = 0; i < MSHR_SIZE; i++){
+//         confidence_q[i] = 0;
+//         delta_q[i] = 0;
+//     }
+//     confidence_q[0] = 100;
+//     GHR.global_accuracy = GHR.pf_issued ? ((100 * GHR.pf_useful) / GHR.pf_issued)  : 0;
+    
+//     SPP_DP (
+//         cout << endl << "[ChampSim] " << __func__ << " addr: " << hex << addr << " cache_line: " << (addr >> LOG2_BLOCK_SIZE);
+//         cout << " page: " << page << " page_offset: " << dec << page_offset << endl;
+//     );
+
+//     // Stage 1: Read and update a sig stored in ST
+//     // last_sig and delta are used to update (sig, delta) correlation in PT
+//     // curr_sig is used to read prefetch candidates in PT 
+//     ST.read_and_update_sig(page, page_offset, last_sig, curr_sig, delta);
+
+//     // Also check the prefetch filter in parallel to update global accuracy counters 
+//     FILTER.check(addr, L2C_DEMAND); 
+
+//     // Stage 2: Update delta patterns stored in PT
+//     if (last_sig) PT.pfb_update_pattern(last_sig, delta);
+
+//     // Stage 3: Start prefetching
+//     uint64_t base_addr = addr;
+//     uint32_t lookahead_conf = 100,
+//              pf_q_head = 0, 
+//              pf_q_tail = 0;
+//     uint8_t  do_lookahead = 0;
+
+// #ifdef LOOKAHEAD_ON
+//     do {
+// #endif
+//         uint32_t lookahead_way = PT_WAY;
+//         PT.read_pattern(curr_sig, delta_q, confidence_q, lookahead_way, lookahead_conf, pf_q_tail, depth);
+
+//         do_lookahead = 0;
+//         for (uint32_t i = pf_q_head; i < pf_q_tail; i++) {
+//             if (confidence_q[i] >= PF_THRESHOLD) {
+//                 uint64_t pf_addr = (base_addr & ~(BLOCK_SIZE - 1)) + (delta_q[i] << LOG2_BLOCK_SIZE);
+
+//                 if ((addr & ~(PAGE_SIZE - 1)) == (pf_addr & ~(PAGE_SIZE - 1))) { // Prefetch request is in the same physical page
+//                     /*
+//                     if (FILTER.check(pf_addr, ((confidence_q[i] >= FILL_THRESHOLD) ? SPP_L2C_PREFETCH : SPP_LLC_PREFETCH))) {
+// 		      prefetch_line(ip, addr, pf_addr, ((confidence_q[i] >= FILL_THRESHOLD) ? FILL_L2 : FILL_LLC), 0); // Use addr (not base_addr) to obey the same physical page boundary
+//                     */
+//                     if (FILTER.check(pf_addr, ((confidence_q[i] >= FILL_THRESHOLD) ? SPP_LLC_PREFETCH : SPP_LLC_PREFETCH))) {
+// 		                prefetch_line(ip, addr, pf_addr, ((confidence_q[i] >= FILL_THRESHOLD) ? FILL_THIS : FILL_THIS), 0); // Use addr (not base_addr) to obey the same physical page boundary
+//                       //  myfile << dec<<instr_id << " " <<hex<<pf_addr<<endl;
+    
+//                         if (confidence_q[i] >= FILL_THRESHOLD) {
+//                             GHR.pf_issued++;
+//                             if (GHR.pf_issued > GLOBAL_COUNTER_MAX) {
+//                                 GHR.pf_issued >>= 1;
+//                                 GHR.pf_useful >>= 1;
+//                             }
+//                             SPP_DP (cout << "[ChampSim] SPP L2 prefetch issued GHR.pf_issued: " << GHR.pf_issued << " GHR.pf_useful: " << GHR.pf_useful << endl;);
+//                         }
+
+//                         SPP_DP (
+//                             cout << "[ChampSim] " << __func__ << " base_addr: " << hex << base_addr << " pf_addr: " << pf_addr;
+//                             cout << " pf_cache_line: " << (pf_addr >> LOG2_BLOCK_SIZE);
+//                             cout << " prefetch_delta: " << dec << delta_q[i] << " confidence: " << confidence_q[i];
+//                             cout << " depth: " << i << " fill_level: " << ((confidence_q[i] >= FILL_THRESHOLD) ? FILL_L2 : FILL_LLC) << endl;
+//                         );
+//                     }
+//                 } else { // Prefetch request is crossing the physical page boundary
+// #ifdef GHR_ON
+//                     // Store this prefetch request in GHR to bootstrap SPP learning when we see a ST miss (i.e., accessing a new page)
+//                     GHR.pfb_update_entry(curr_sig, confidence_q[i], (pf_addr >> LOG2_BLOCK_SIZE) & 0x3F, delta_q[i]); 
+// #endif
+//                 }
+
+//                 do_lookahead = 1;
+//                 pf_q_head++;
+//             }
+//         }
+
+//         // Update base_addr and curr_sig
+//         if (lookahead_way < PT_WAY) {
+//             uint32_t set = pfb_get_hash(curr_sig) % PT_SET;
+//             base_addr += (PT.delta[set][lookahead_way] << LOG2_BLOCK_SIZE);
+
+//             // PT.delta uses a 7-bit sign magnitude representation to generate sig_delta
+//             //int sig_delta = (PT.delta[set][lookahead_way] < 0) ? ((((-1) * PT.delta[set][lookahead_way]) & 0x3F) + 0x40) : PT.delta[set][lookahead_way];
+//             int sig_delta = (PT.delta[set][lookahead_way] < 0) ? (((-1) * PT.delta[set][lookahead_way]) + (1 << (SIG_DELTA_BIT - 1))) : PT.delta[set][lookahead_way];
+//             curr_sig = ((curr_sig << SIG_SHIFT) ^ sig_delta) & SIG_MASK;
+//         }
+
+//         SPP_DP (
+//             cout << "Looping curr_sig: " << hex << curr_sig << " base_addr: " << base_addr << dec;
+//             cout << " pf_q_head: " << pf_q_head << " pf_q_tail: " << pf_q_tail << " depth: " << depth << endl;
+//         );
+// #ifdef LOOKAHEAD_ON
+//     } while (do_lookahead);
+// #endif
+
+//     return metadata_in;
+// }
+
+
+// uint32_t  prefetcher_cache_operate_vldp(uint64_t addr, uint64_t ip, uint8_t cache_hit, uint8_t type, uint32_t metadata_in)
+// {
+
+//     uint64_t block_number = addr >> LOG2_BLOCK_SIZE;
+//     uint32_t set = get_set(block_number);
+//     uint32_t way = get_way(block_number, set);
+//     uint8_t prefetch = block[set* NUM_WAY + way].prefetch;
+
+//     /* pfb_check prefetch hit */
+//     bool prefetch_hit = false;
+//     if (cache_hit == 1 && prefetch == 1)
+//         prefetch_hit = true;
+
+//     /* pfb_check trigger access */
+//     bool trigger_access = false;
+//     if (cache_hit == 0 || prefetch_hit)
+//         trigger_access = true;
+
+//     if (!trigger_access)
+//         return metadata_in;
+
+//     /* call prefetcher and send prefetches */
+//     vector<uint64_t> to_prefetch = prefetchers[0].access(block_number);
+//     uint64_t candidates_out; 
+//     for(uint32_t i=0; i<to_prefetch.size(); i++){
+//       candidates_out=to_prefetch[i]<< LOG2_BLOCK_SIZE;
+//       prefetch_line(ip, addr, candidates_out, FILL_THIS, 0);
+//     }
+//     return metadata_in;
+
+//     /*
+//     for (auto &pf_block_number : to_prefetch) {
+//         uint64_t pf_address = pf_block_number << LOG2_BLOCK_SIZE;
+        
+//         if(instr_id>0){
+//             prefetch_line(ip, addr, pf_address, FILL_THIS, 0); 
+//    //         myfile << dec<<instr_id << "addr:" <<hex<<addr<<endl;
+//    //         myfile << dec<<instr_id << " " <<hex<<pf_address<<endl;
+//         }
+//     }
+//     */
+// }
+
+
+
+
+uint32_t CACHE::pfb_prefetcher_operate(uint64_t addr, uint64_t ip, uint8_t cache_hit, uint8_t type, uint32_t metadata_in){
+
+    // for(int i = 0; i < PREFETCHER_NUM; i++){
+    //     confidence_buffer.confidence[i] = 0;
+    // }
+
+    for(int i = 0; i < PREFETCHER_NUM; i++){
+        for(int j = 0; j < CONFIDENCE_WINDOW_SIZE; j++){
+            uint64_t temp = confidence_buffer.confidence_window[i][j];
+            if (addr < temp + BLOCK_SIZE && addr >= temp)
+                if (confidence_buffer.confidence[i] < 100000000)
+                    confidence_buffer.confidence[i] += 1;
+        }
+    }
+
+    int max_index = 0;
+    for(int i = 0; i < PREFETCHER_NUM; i++){
+        if(confidence_buffer.confidence[max_index] < confidence_buffer.confidence[i]){
+            max_index = i;
+        }
+    }
+
+
+    ///////////////////////////////////////////////////////*******************************domino
+    if (type != LOAD)
+        return metadata_in;
+
+    // if(cache_hit)
+    //    return metadata_in;
+
+    uint64_t addr_B = (addr >> 6) << 6;
+
+    if(addr_B == domino[cpu].last_address)
+        return metadata_in;
+
+    pfb_total_access++;
+
+    //Predict before training
+    vector<uint64_t> candidates = domino[cpu].domino_predict(addr_B, domino[cpu].last_address);
+
+    int num_prefetched = 0;
+    uint64_t candidates_out;
+    for(unsigned int i=0; i<candidates.size(); i++)
+    {
+        candidates_out=candidates[i];
+        if (max_index == 0)
+            prefetch_line(ip, addr, candidates[i], FILL_PFB, 0);
+
+        confidence_buffer.confidence_window[0][confidence_buffer.end_pointer[0]] = candidates[i];
+        confidence_buffer.end_pointer[0] = (confidence_buffer.end_pointer[0] + 1) % CONFIDENCE_WINDOW_SIZE;
+
+        pfb_predictions++;
+        num_prefetched++;
+        
+        if(num_prefetched >= PREFETCH_DEGREE)
+            break;
+    }
+
+    domino[cpu].domino_train(addr_B, domino[cpu].last_address);
+    
+    domino[cpu].last_address = addr_B;
+
+
+    //////////////////////////////////////***********************************************bo
+
+    uint64_t block_number = addr >> LOG2_BLOCK_SIZE;
+    uint32_t set = get_set(block_number);
+    uint32_t way = get_way(block_number, set);
+    uint8_t prefetch = block[set][way].prefetch;
+
+    /* pfb_check prefetch hit */
+    bool prefetch_hit = false;
+    if (cache_hit == 1 && prefetch == 1)
+      prefetch_hit = true;
+
+    /* pfb_check trigger access */
+    bool trigger_access = false;
+    if (cache_hit == 0 || prefetch_hit)
+      trigger_access = true;
+
+    if (!trigger_access)
+      return metadata_in;
+    ;
+
+    /* call prefetcher and send prefetches */
+    vector<uint64_t> to_prefetch = bo_prefechers[cpu].access(block_number);
+    for (auto& pf_block_number : to_prefetch) {
+      uint64_t pf_address = pf_block_number << LOG2_BLOCK_SIZE;
+      /* champsim automatically ignores prefetches that cross page boundaries */
+      if(max_index == 1)
+        prefetch_line(ip, addr, pf_address, FILL_PFB, 0);
+
+      confidence_buffer.confidence_window[1][confidence_buffer.end_pointer[1]] = pf_address;
+      confidence_buffer.end_pointer[1] = (confidence_buffer.end_pointer[1] + 1) % CONFIDENCE_WINDOW_SIZE;
+    //   printf("addr:%p\n", addr);
+    //   printf("pf_address:%p\n", pf_address);
+    //   printf("PQ_size:%d\n", CACHE::PQ_SIZE);
+    }
+
+    ///////////////////////////////////////////****************************************vldp
+
+    block_number = addr >> LOG2_BLOCK_SIZE;
+    set = get_set(block_number);
+    way = get_way(block_number, set);
+    prefetch = block[set][way].prefetch;
+
+    /* pfb_check prefetch hit */
+    prefetch_hit = false;
+    if (cache_hit == 1 && prefetch == 1)
+        prefetch_hit = true;
+
+    /* pfb_check trigger access */
+    trigger_access = false;
+    if (cache_hit == 0 || prefetch_hit)
+        trigger_access = true;
+
+    if (!trigger_access)
+        return metadata_in;
+
+    /* call prefetcher and send prefetches */
+    vector<uint64_t> to_prefetch_ = pfb_prefetchers[0].access(block_number);
+    // uint64_t candidates_out; 
+    for(uint32_t i=0; i<to_prefetch_.size(); i++){
+      candidates_out=to_prefetch_[i]<< LOG2_BLOCK_SIZE;
+      if(max_index == 2)
+        prefetch_line(ip, addr, candidates_out, FILL_PFB, 0);
+
+      confidence_buffer.confidence_window[2][confidence_buffer.end_pointer[2]] = candidates_out;
+      confidence_buffer.end_pointer[2] = (confidence_buffer.end_pointer[2] + 1) % CONFIDENCE_WINDOW_SIZE;
+    }
+
+    /////////////////////////////////////////********************************************spp
+
+    uint64_t page = addr >> LOG2_PAGE_SIZE;
+    uint32_t page_offset = (addr >> LOG2_BLOCK_SIZE) & (PAGE_SIZE / BLOCK_SIZE - 1),
+             last_sig = 0,
+             curr_sig = 0,
+             confidence_q[MSHR_SIZE],
+             depth = 0;
+
+    int32_t  delta = 0,
+             delta_q[MSHR_SIZE];
+
+    for (uint32_t i = 0; i < MSHR_SIZE; i++){
+        confidence_q[i] = 0;
+        delta_q[i] = 0;
+    }
+    confidence_q[0] = 100;
+    GHR.global_accuracy = GHR.pf_issued ? ((100 * GHR.pf_useful) / GHR.pf_issued)  : 0;
+    
+    SPP_DP (
+        cout << endl << "[ChampSim] " << __func__ << " addr: " << hex << addr << " cache_line: " << (addr >> LOG2_BLOCK_SIZE);
+        cout << " page: " << page << " page_offset: " << dec << page_offset << endl;
+    );
+
+    // Stage 1: Read and update a sig stored in ST
+    // last_sig and delta are used to update (sig, delta) correlation in PT
+    // curr_sig is used to read prefetch candidates in PT 
+    ST.read_and_update_sig(page, page_offset, last_sig, curr_sig, delta);
+
+    // Also pfb_check the prefetch filter in parallel to update global accuracy counters 
+    FILTER.pfb_check(addr, L2C_DEMAND); 
+
+    // Stage 2: Update delta patterns stored in PT
+    if (last_sig) PT.pfb_update_pattern(last_sig, delta);
+
+    // Stage 3: Start prefetching
+    uint64_t base_addr = addr;
+    uint32_t lookahead_conf = 100,
+             pf_q_head = 0, 
+             pf_q_tail = 0;
+    uint8_t  do_lookahead = 0;
+
+#ifdef LOOKAHEAD_ON
+    do {
+#endif
+        uint32_t lookahead_way = PT_WAY;
+        PT.read_pattern(curr_sig, delta_q, confidence_q, lookahead_way, lookahead_conf, pf_q_tail, depth);
+
+        do_lookahead = 0;
+        for (uint32_t i = pf_q_head; i < pf_q_tail; i++) {
+            if (confidence_q[i] >= PF_THRESHOLD) {
+                uint64_t pf_addr = (base_addr & ~(BLOCK_SIZE - 1)) + (delta_q[i] << LOG2_BLOCK_SIZE);
+
+                if ((addr & ~(PAGE_SIZE - 1)) == (pf_addr & ~(PAGE_SIZE - 1))) { // Prefetch request is in the same physical page
+                    /*
+                    if (FILTER.pfb_check(pf_addr, ((confidence_q[i] >= FILL_THRESHOLD) ? SPP_L2C_PREFETCH : SPP_LLC_PREFETCH))) {
+		      prefetch_line(ip, addr, pf_addr, ((confidence_q[i] >= FILL_THRESHOLD) ? FILL_L2 : FILL_LLC), 0); // Use addr (not base_addr) to obey the same physical page boundary
+                    */
+                    if (FILTER.pfb_check(pf_addr, ((confidence_q[i] >= FILL_THRESHOLD) ? SPP_LLC_PREFETCH : SPP_LLC_PREFETCH))) {
+
+                        if (max_index == 3)
+                            prefetch_line(ip, addr, pf_addr, ((confidence_q[i] >= FILL_THRESHOLD) ? FILL_PFB : FILL_PFB), 0); // Use addr (not base_addr) to obey the same physical page boundary
+                        confidence_buffer.confidence_window[3][confidence_buffer.end_pointer[3]] = pf_addr;
+                        confidence_buffer.end_pointer[3] = (confidence_buffer.end_pointer[3] + 1) % CONFIDENCE_WINDOW_SIZE;
+                      //  myfile << dec<<instr_id << " " <<hex<<pf_addr<<endl;
+    
+                        if (confidence_q[i] >= FILL_THRESHOLD) {
+                            GHR.pf_issued++;
+                            if (GHR.pf_issued > GLOBAL_COUNTER_MAX) {
+                                GHR.pf_issued >>= 1;
+                                GHR.pf_useful >>= 1;
+                            }
+                            SPP_DP (cout << "[ChampSim] SPP L2 prefetch issued GHR.pf_issued: " << GHR.pf_issued << " GHR.pf_useful: " << GHR.pf_useful << endl;);
+                        }
+
+                        SPP_DP (
+                            cout << "[ChampSim] " << __func__ << " base_addr: " << hex << base_addr << " pf_addr: " << pf_addr;
+                            cout << " pf_cache_line: " << (pf_addr >> LOG2_BLOCK_SIZE);
+                            cout << " prefetch_delta: " << dec << delta_q[i] << " confidence: " << confidence_q[i];
+                            cout << " depth: " << i << " fill_level: " << ((confidence_q[i] >= FILL_THRESHOLD) ? FILL_L2 : FILL_LLC) << endl;
+                        );
+                    }
+                } else { // Prefetch request is crossing the physical page boundary
+#ifdef GHR_ON
+                    // Store this prefetch request in GHR to bootstrap SPP learning when we see a ST miss (i.e., accessing a new page)
+                    GHR.pfb_update_entry(curr_sig, confidence_q[i], (pf_addr >> LOG2_BLOCK_SIZE) & 0x3F, delta_q[i]); 
+#endif
+                }
+
+                do_lookahead = 1;
+                pf_q_head++;
+            }
+        }
+
+        // Update base_addr and curr_sig
+        if (lookahead_way < PT_WAY) {
+            uint32_t set = pfb_get_hash(curr_sig) % PT_SET;
+            base_addr += (PT.delta[set][lookahead_way] << LOG2_BLOCK_SIZE);
+
+            // PT.delta uses a 7-bit sign magnitude representation to generate sig_delta
+            //int sig_delta = (PT.delta[set][lookahead_way] < 0) ? ((((-1) * PT.delta[set][lookahead_way]) & 0x3F) + 0x40) : PT.delta[set][lookahead_way];
+            int sig_delta = (PT.delta[set][lookahead_way] < 0) ? (((-1) * PT.delta[set][lookahead_way]) + (1 << (SIG_DELTA_BIT - 1))) : PT.delta[set][lookahead_way];
+            curr_sig = ((curr_sig << SIG_SHIFT) ^ sig_delta) & SIG_MASK;
+        }
+
+        SPP_DP (
+            cout << "Looping curr_sig: " << hex << curr_sig << " base_addr: " << base_addr << dec;
+            cout << " pf_q_head: " << pf_q_head << " pf_q_tail: " << pf_q_tail << " depth: " << depth << endl;
+        );
+#ifdef LOOKAHEAD_ON
+    } while (do_lookahead);
+#endif
+
+    //////////////////////////////////////////////////////////**********************************************
+
+    return metadata_in;
+}
+
+
+///////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+// uint32_t  prefetcher_cache_fill_domino(uint64_t addr, uint32_t set, uint32_t way, uint8_t prefetch, uint64_t evicted_addr,uint32_t metadata_in)
+// {
+//     return metadata_in;
+// }
+
+// uint32_t  prefetcher_cache_fill_bo(uint64_t addr, uint32_t set, uint32_t way, uint8_t prefetch, uint64_t evicted_addr, uint32_t metadata_in)
+// {
+//   bo_prefechers[cpu].cache_fill(addr >> LOG2_BLOCK_SIZE, (bool)prefetch);
+//   return metadata_in;
+// }
+
+// uint32_t  prefetcher_cache_fill_spp(uint64_t addr, uint32_t set, uint32_t way, uint8_t prefetch, uint64_t evicted_addr, uint32_t metadata_in)
+// {
+// #ifdef FILTER_ON
+//     SPP_DP (cout << endl;);
+//     FILTER.pfb_check(evicted_addr, L2C_EVICT);
+// #endif
+
+//     return metadata_in;
+// }
+
+// uint32_t  prefetcher_cache_fill_vldp(uint64_t addr, uint32_t set, uint32_t way, uint8_t prefetch, uint64_t evicted_addr,uint32_t metadata_in) {
+// 	return metadata_in;}
+
+uint32_t CACHE::pfb_prefetcher_cache_fill(uint64_t addr, uint32_t set, uint32_t way, uint8_t prefetch, uint64_t evicted_addr,uint32_t metadata_in){
+    bo_prefechers[cpu].cache_fill(addr >> LOG2_BLOCK_SIZE, (bool)prefetch);
+
+#ifdef FILTER_ON
+    SPP_DP (cout << endl;);
+    FILTER.pfb_check(evicted_addr, L2C_EVICT);
+#endif
+
+    return metadata_in;
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+void  prefetcher_final_stats_domino() 
+{
+ //   myfile.close();
+/*
+  printf("Prefetcher final stats\n");
+    cout << "Index Table Size: " << domino[cpu].index_table.size() << endl;
+    cout << "GHB size: " << domino[cpu].GHB.size() << endl;;
+    cout << endl << endl;
+    cout << "Triggers: " << pfb_total_access << endl;
+    cout << "No Prediction: " << no_prediction << " " << 100*(double)no_prediction/(double)pfb_total_access << endl;
+    cout << "pfb_predictions: " << pfb_predictions << " " << 100*(double)pfb_predictions/(double)pfb_total_access << endl;
+    cout << endl << endl;
+    */
+}
+void  prefetcher_final_stats_bo() { cout << "Prefetcher Final Stats: none" << endl; }
+
+void  prefetcher_final_stats_spp()
+{
+//myfile.close();
+}
+
+void  prefetcher_final_stats_vldp()
+{
+//    myfile.close();
+}
+
+uint32_t CACHE::pfb_prefetcher_prefetch_hit(uint64_t addr, uint64_t ip, uint32_t metadata_in)
+{
+    return metadata_in;
+}
+
+void CACHE::pfb_prefetcher_final_stats()
+{
+    
+}
+
+void CACHE::pfb_prefetcher_print_config()
+{
+	
+}
+
+void CACHE::pfb_prefetcher_broadcast_bw(uint8_t bw_level)
+{
+}
+
+void CACHE::pfb_prefetcher_broadcast_ipc(uint8_t ipc)
+{
+}
+
+void CACHE::pfb_prefetcher_broadcast_acc(uint32_t acc_level)
+{
+}
