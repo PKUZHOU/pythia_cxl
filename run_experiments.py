@@ -7,30 +7,26 @@ import time
 
 DEBUG = False
 
-
-
-
-
-
 def parse_args():
     parser = argparse.ArgumentParser(description='Experiments')
-    parser.add_argument('--exp_tag', type=str, default='selected_trace_scooby', help='the purpose of this experiment')
+    parser.add_argument('--exp_tag', type=str, default='select_trace_scooby_degree_16', help='the purpose of this experiment')
     parser.add_argument('--max_threads',type=int,default='64')
     parser.add_argument('--trace_dir', type=str, default='./traces/spec_select', help='root directory of trace')
     parser.add_argument('--results_dir', type=str, default='./experiments/isca/', help='root directory to save all results')
     
     parser.add_argument('--l1_pref', type=list, default=['multi'])
     parser.add_argument('--l2_pref', type=list, default=['scooby']) 
-    parser.add_argument('--llc_pref',type=list, default=['no'])
     parser.add_argument('--pfb_pref', type=list, default=['no'])
+
+    parser.add_argument('--llc_pref',type=list, default=['no'])
 
     parser.add_argument('--cfg_def_file', type=str, default="./inc/defines.h")
     parser.add_argument('--enable_cxl', action="store_true", help="enable cxl channel")
     parser.add_argument('--enable_pfb', action="store_true", help="enable cxl memory prefetch buffer")
 
-    parser.add_argument('--cxl_latency', type=list, default=[0, 40, 80, 120, 160, 200])
-    # parser.add_argument('--cxl_latency', type=list, default=[80])
-    parser.add_argument('--pfb_latency', type=int, default=1)
+    # parser.add_argument('--cxl_latency', type=list, default=[40, 120, 160, 200])
+    parser.add_argument('--cxl_latency', type=list, default=[80])
+    parser.add_argument('--pfb_latency', type=int, default=20)
 
     parser.add_argument('--pfb_sets', type=int, default=4096, help='pfb_sets = 1 to simulate CXL without prefetch buffer')
     parser.add_argument('--pfb_ways', type=int, default=16, help='pfb_ways = 1 to simulate CXL without prefetch buffer')

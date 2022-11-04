@@ -5,9 +5,10 @@ import argparse
 
 def parse_args():
     parser = argparse.ArgumentParser(description='Experiments')
-    parser.add_argument('--exp_tag', type=str, default='scooby_hybrid_more_traces',
+    parser.add_argument('--exp_tag', type=str, default='selected_trace_scooby',
                         help='the purpose of this experiment')
-    parser.add_argument('--results_dir', type=str, default='./experiments/isca/more_trace_scooby',
+    parser.add_argument('--filter_list', type=str, default='./filter_list')
+    parser.add_argument('--results_dir', type=str, default='./experiments/isca/selected_trace_scooby',
                         help='root directory to save all results')
     parser.add_argument('--csv_dir', type=str, default='./csv_results')
 
@@ -22,7 +23,15 @@ def run(args):
     if not os.path.exists(csv_save_path):
         os.mkdir(csv_save_path)
 
-    tasks = ['ipc', 'coverage', 'overpred', 'total_inst']
+    tasks = ['ipc', 'coverage', 'overpred', 'lateness',  'pfb_load_hit','dram_bw_0','dram_bw_1','dram_bw_2','dram_bw_3']
+
+    target_traces = []
+    print(args.filter_list)
+    f = open("./filter_list.txt",'r')
+    traces = f.readlines()
+    for trace in traces:
+        target_traces.append(trace.strip())
+    f.close()
 
     for task in tasks:
         f = open('csv_results/{}/{}.csv'.format(args.exp_tag, task),
@@ -46,6 +55,9 @@ def run(args):
                         results.append(x)
                 sorted(results)
                 for result_file in results:
+                    task_name = result_file.split(".")[1]
+                    if not task_name in target_traces:
+                        continue
                     file_path = os.path.join(config_path, result_file)
                     print(file_path)
                     with open(file_path, 'r') as f2:
@@ -54,7 +66,6 @@ def run(args):
                             for line in lines:
                                 if "Core_0_IPC" in line:
                                     ipc = line.split(" ")[1].strip()
-                                    task_name = result_file.split(".")[1]
                                     all_results[config][task_name] = ipc
                                     print(ipc)
 
@@ -62,7 +73,6 @@ def run(args):
                             for line in lines:
                                 if "Core_0_LLC_load_miss" in line:
                                     llc_load_miss = line.split(" ")[1].strip()
-                                    task_name = result_file.split(".")[1]
                                     all_results[config][task_name] = llc_load_miss
 
                         elif task == 'overpred':
@@ -70,8 +80,7 @@ def run(args):
                             llc_total_miss = 0
                             llc_write_miss = 0
                             llc_rfo_miss = 0
-                            for i in range(len(lines)):
-                                line = lines[i]
+                            for line in lines:
                                 if "Core_0_LLC_total_miss" in line:
                                     llc_total_miss = int(
                                         line.split(" ")[1].strip())
@@ -82,8 +91,52 @@ def run(args):
                                     llc_rfo_miss = int(
                                         line.split(" ")[1].strip())
                             llc_read_miss = llc_total_miss - llc_write_miss - llc_rfo_miss
-                            task_name = result_file.split(".")[1]
                             all_results[config][task_name] = llc_read_miss
+                        elif task == 'pfb_load_hit':
+                            pfb_load_hit = 0
+                            for line in lines:
+                                if "Core_0_PFB_load_hit" in line:
+                                    pfb_load_hit = int(
+                                        line.split(" ")[1].strip())
+                            all_results[config][task_name] = pfb_load_hit
+                        elif task == 'lateness':
+                            lateness = 0
+                            prefetch_late = 0
+                            prefetch_useful = 0
+                            for line in lines:
+                                if "Core_0_L2C_prefetch_late" in line:
+                                    prefetch_late = int(
+                                        line.split(" ")[1].strip())
+
+                                if "Core_0_L2C_prefetch_useful" in line:
+                                    prefetch_useful = int(
+                                        line.split(" ")[1].strip())
+                            lateness = float(prefetch_late) / prefetch_useful
+                            all_results[config][task_name] = lateness
+                        elif task == 'dram_bw_0':
+                            for line in lines:
+                                if "DRAM_bw_level_0" in line:
+                                    bw_level = int(
+                                        line.split(" ")[1].strip())
+                            all_results[config][task_name] = bw_level
+                        elif task == 'dram_bw_1':
+                            for line in lines:
+                                if "DRAM_bw_level_1" in line:
+                                    bw_level = int(
+                                        line.split(" ")[1].strip())
+                            all_results[config][task_name] = bw_level
+                        elif task == 'dram_bw_2':
+                            for line in lines:
+                                if "DRAM_bw_level_2" in line:
+                                    bw_level = int(
+                                        line.split(" ")[1].strip())
+                            all_results[config][task_name] = bw_level
+                        elif task == 'dram_bw_3':
+                            for line in lines:
+                                if "DRAM_bw_level_3" in line:
+                                    bw_level = int(
+                                        line.split(" ")[1].strip())
+                            all_results[config][task_name] = bw_level
 
             total_tasks = list(list(all_results.values())[0].keys())
             total_configs = sorted(list(all_results.keys()))
