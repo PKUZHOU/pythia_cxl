@@ -9,14 +9,14 @@ DEBUG = False
 
 def parse_args():
     parser = argparse.ArgumentParser(description='Experiments')
-    parser.add_argument('--exp_tag', type=str, default='select_trace_scooby_degree_16', help='the purpose of this experiment')
+    parser.add_argument('--exp_tag', type=str, default='hybrid_bloom_v13', help='the purpose of this experiment')
     parser.add_argument('--max_threads',type=int,default='64')
     parser.add_argument('--trace_dir', type=str, default='./traces/spec_select', help='root directory of trace')
     parser.add_argument('--results_dir', type=str, default='./experiments/isca/', help='root directory to save all results')
     
     parser.add_argument('--l1_pref', type=list, default=['multi'])
     parser.add_argument('--l2_pref', type=list, default=['scooby']) 
-    parser.add_argument('--pfb_pref', type=list, default=['no'])
+    parser.add_argument('--pfb_pref', type=list, default=['hybrid'])
 
     parser.add_argument('--llc_pref',type=list, default=['no'])
 
@@ -36,7 +36,7 @@ def parse_args():
     parser.add_argument('--dram_io', type=int, default=4800)
 
     parser.add_argument('--branch_predictor', type=str, default="perceptron")
-    parser.add_argument('--warmup_inst',type=int, default=50000000, help="gapbs 150m, general 30m")
+    parser.add_argument('--warmup_inst',type=int, default=50000000, help="gapbs 150m, general 50m")
     parser.add_argument('--sim_inst',type=int, default=100000000, help='gapbs 50m, general 100m')
 
     args = parser.parse_args()

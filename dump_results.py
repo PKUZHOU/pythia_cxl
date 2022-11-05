@@ -5,10 +5,10 @@ import argparse
 
 def parse_args():
     parser = argparse.ArgumentParser(description='Experiments')
-    parser.add_argument('--exp_tag', type=str, default='selected_trace_scooby',
+    parser.add_argument('--exp_tag', type=str, default='hybrid_bloom_v13',
                         help='the purpose of this experiment')
     parser.add_argument('--filter_list', type=str, default='./filter_list')
-    parser.add_argument('--results_dir', type=str, default='./experiments/isca/selected_trace_scooby',
+    parser.add_argument('--results_dir', type=str, default='./experiments/isca/',
                         help='root directory to save all results')
     parser.add_argument('--csv_dir', type=str, default='./csv_results')
 
@@ -17,13 +17,14 @@ def parse_args():
 
 
 def run(args):
-    latency_configs = os.listdir(args.results_dir)
+    out_dir = os.path.join(args.results_dir, args.exp_tag)
+    latency_configs = os.listdir(out_dir)
     latency_configs = sorted([int(x) for x in latency_configs])
     csv_save_path = "csv_results/{}".format(args.exp_tag)
     if not os.path.exists(csv_save_path):
         os.mkdir(csv_save_path)
 
-    tasks = ['ipc', 'coverage', 'overpred', 'lateness',  'pfb_load_hit','dram_bw_0','dram_bw_1','dram_bw_2','dram_bw_3']
+    tasks = ['ipc', 'coverage', 'overpred', 'pfb_load_hit','dram_bw_0','dram_bw_1','dram_bw_2','dram_bw_3']
 
     target_traces = []
     print(args.filter_list)
@@ -43,7 +44,7 @@ def run(args):
             # print(latency_config)
             csv_writer.writerow([latency_config])
             all_results = {}  # save the table data
-            results_dir = os.path.join(args.results_dir, latency_config)
+            results_dir = os.path.join(args.results_dir, args.exp_tag, latency_config)
             configs = os.listdir(results_dir)
             for config in configs:  # different prefetching configurations
                 all_results[config] = {}
@@ -55,9 +56,9 @@ def run(args):
                         results.append(x)
                 sorted(results)
                 for result_file in results:
-                    task_name = result_file.split(".")[1]
-                    if not task_name in target_traces:
-                        continue
+                    task_name = result_file.split("champsimtrace.xz")[0]
+                    # if not task_name in target_traces:
+                    #     continue
                     file_path = os.path.join(config_path, result_file)
                     print(file_path)
                     with open(file_path, 'r') as f2:
