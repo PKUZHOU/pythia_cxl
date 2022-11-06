@@ -1331,12 +1331,14 @@ void CACHE::handle_prefetch()
                 // run prefetcher on prefetches from higher caches
                 if (PQ.entry[index].pf_origin_level < fill_level)
                 {
+#ifdef PF_ON_PF
                   if (cache_type == IS_PFB)
                   {
                     cpu = prefetch_cpu;
                     PQ.entry[index].pf_metadata = pfb_prefetcher_operate(PQ.entry[index].address << LOG2_BLOCK_SIZE, PQ.entry[index].ip, 0, PREFETCH, PQ.entry[index].pf_metadata);
                     cpu = 0;
                   }
+#endif
                 }
 
                 // add it to MSHRs if this prefetch miss will be filled to this cache level

@@ -9,13 +9,13 @@ DEBUG = False
 
 def parse_args():
     parser = argparse.ArgumentParser(description='Experiments')
-    parser.add_argument('--exp_tag', type=str, default='short_cut_v2', help='the purpose of this experiment')
+    parser.add_argument('--exp_tag', type=str, default='no_pf_on_pf', help='the purpose of this experiment')
     parser.add_argument('--max_threads',type=int,default='64')
     parser.add_argument('--trace_dir', type=str, default='./traces/spec_select', help='root directory of trace')
     parser.add_argument('--results_dir', type=str, default='./experiments/isca/', help='root directory to save all results')
     
     parser.add_argument('--l1_pref', type=list, default=['multi'])
-    parser.add_argument('--l2_pref', type=list, default=['scooby']) 
+    parser.add_argument('--l2_pref', type=list, default=['streamer']) 
     parser.add_argument('--pfb_pref', type=list, default=['hybrid'])
 
     parser.add_argument('--llc_pref',type=list, default=['no'])
@@ -23,6 +23,7 @@ def parse_args():
     parser.add_argument('--cfg_def_file', type=str, default="./inc/defines.h")
     parser.add_argument('--enable_cxl', action="store_true", help="enable cxl channel")
     parser.add_argument('--enable_pfb', action="store_true", help="enable cxl memory prefetch buffer")
+    parser.add_argument('--pf_on_pf', action="store_true", help="enable pfb prefetch on prefetch")
 
     # parser.add_argument('--cxl_latency', type=list, default=[40, 120, 160, 200])
     parser.add_argument('--cxl_latency', type=list, default=[80])
@@ -111,6 +112,10 @@ def prepare_sim_cmds(args):
                 params.append("WITH_PFB")
                 params.append("PFB_SET {}".format(args.pfb_sets))
                 params.append("PFB_WAY {}".format(args.pfb_ways))
+
+            if (args.pf_on_pf):
+                params.append("PF_ON_PF")
+
 
             params.append("CXL_LATENCY {}".format(cxl_latency))
             params.append("PFB_LATENCY {}".format(pfb_latency))

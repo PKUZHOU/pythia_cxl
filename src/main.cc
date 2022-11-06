@@ -335,6 +335,7 @@ void print_deadlock(uint32_t i)
         cout << " fill_level: " << queue->entry[j].fill_level << " lq_index: " << queue->entry[j].lq_index << " sq_index: " << queue->entry[j].sq_index << endl;
     }
 
+#ifdef WITH_PFB
     // print PFB RQ
     cout << endl <<uncore.PFB.RQ.NAME <<endl;
     for (uint32_t j=0; j<uncore.PFB.RQ.SIZE;j++)
@@ -356,6 +357,7 @@ void print_deadlock(uint32_t i)
         cout << "[PFB PQ] entry: " << j << " instr_id: " << uncore.PFB.PQ.entry[j].instr_id << " address: " << hex << uncore.PFB.PQ.entry[j].address << " rob_index: " << uncore.PFB.PQ.entry[j].rob_index << dec << endl;
     }
 
+#endif
     cout << endl <<uncore.DRAM.RQ[0].NAME <<endl;
     // print PFB MSHR
     for (uint32_t j=0; j<uncore.DRAM.RQ[0].SIZE;j++)
