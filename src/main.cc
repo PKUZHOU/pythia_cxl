@@ -310,6 +310,9 @@ void print_deadlock(uint32_t i)
     cout << " event: " << ooo_cpu[i].ROB.entry[ooo_cpu[i].ROB.head].event_cycle;
     cout << " current: " << current_core_cycle[i] << endl;
 
+    // print DRAM queue data
+    cout << endl << "DRAM RQ Occupancy: " << uncore.DRAM.RQ[0].occupancy<<endl;
+
     // print LQ entry
     cout << endl << "Load Queue Entry" << endl;
     for (uint32_t j=0; j<LQ_SIZE; j++) {
@@ -331,6 +334,35 @@ void print_deadlock(uint32_t i)
         cout << " address: " << hex << queue->entry[j].address << " full_addr: " << queue->entry[j].full_addr << dec << " type: " << +queue->entry[j].type;
         cout << " fill_level: " << queue->entry[j].fill_level << " lq_index: " << queue->entry[j].lq_index << " sq_index: " << queue->entry[j].sq_index << endl;
     }
+
+    // print PFB RQ
+    cout << endl <<uncore.PFB.RQ.NAME <<endl;
+    for (uint32_t j=0; j<uncore.PFB.RQ.SIZE;j++)
+    {
+        cout << "[PFB RQ] entry: " << j << " instr_id: " << uncore.PFB.RQ.entry[j].instr_id << " address: " << hex << uncore.PFB.RQ.entry[j].address << " rob_index: " << uncore.PFB.RQ.entry[j].rob_index << dec << endl;
+    }
+
+    cout << endl <<uncore.PFB.MSHR.NAME <<endl;
+    // print PFB MSHR
+    for (uint32_t j=0; j<uncore.PFB.MSHR.SIZE;j++)
+    {
+        cout << "[PFB MSHR] entry: " << j << " instr_id: " << uncore.PFB.MSHR.entry[j].instr_id << " address: " << hex << uncore.PFB.MSHR.entry[j].address << " rob_index: " << uncore.PFB.MSHR.entry[j].rob_index << dec << endl;
+    }
+
+    cout << endl <<uncore.PFB.PQ.NAME <<endl;
+    // print PFB MSHR
+    for (uint32_t j=0; j<uncore.PFB.PQ.SIZE;j++)
+    {
+        cout << "[PFB PQ] entry: " << j << " instr_id: " << uncore.PFB.PQ.entry[j].instr_id << " address: " << hex << uncore.PFB.PQ.entry[j].address << " rob_index: " << uncore.PFB.PQ.entry[j].rob_index << dec << endl;
+    }
+
+    cout << endl <<uncore.DRAM.RQ[0].NAME <<endl;
+    // print PFB MSHR
+    for (uint32_t j=0; j<uncore.DRAM.RQ[0].SIZE;j++)
+    {
+        cout << "[DRAM RQ 0] entry: " << j << " instr_id: " << uncore.DRAM.RQ[0].entry[j].instr_id << " address: " << hex << uncore.DRAM.RQ[0].entry[j].address << " rob_index: " << uncore.DRAM.RQ[0].entry[j].rob_index << dec << " event_cycle:" << uncore.DRAM.RQ[0].entry[j].event_cycle << " scheduled:" << int(uncore.DRAM.RQ[0].entry[j].scheduled) << endl;
+    }
+
 
     assert(0);
 }

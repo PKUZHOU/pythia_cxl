@@ -288,6 +288,33 @@ void MEMORY_CONTROLLER::schedule(PACKET_QUEUE *queue)
     }
 }
 
+void MEMORY_CONTROLLER::remove_rq(uint32_t channel, PACKET *packet)
+{
+    int dram_rq_index = check_dram_queue(&RQ[channel], packet);
+
+    if(RQ[channel].entry[dram_rq_index].scheduled) return;
+
+#ifdef CXL_DEBUG
+    cout<<"Remove Unscheduled"<<endl;
+#endif
+
+    // RQ[channel].entry[dram_rq_index].address = 0;
+    // if (RQ[channel].entry[dram_rq_index].scheduled){
+    //     RQ[channel].entry[dram_rq_index].scheduled = 0;
+    //     scheduled_reads[channel]--;
+    // }
+    RQ[channel].remove_queue(&RQ[channel].entry[dram_rq_index]);
+
+    // RQ[channel].occupancy--;
+    // RQ[channel].head++;
+    // if (RQ[channel].head >= RQ[channel].SIZE)
+    //     RQ[channel].head = 0;
+    
+    rq_enqueue_count--;
+    // reset_remain_requests(&RQ[channel], channel);
+    update_schedule_cycle(&RQ[channel]);
+}
+
 void MEMORY_CONTROLLER::process(PACKET_QUEUE *queue)
 {
     uint32_t request_index = queue->next_process_index;
@@ -348,6 +375,9 @@ void MEMORY_CONTROLLER::process(PACKET_QUEUE *queue)
                 cout << " current_cycle: " << current_core_cycle[op_cpu] << " event_cycle: " << queue->entry[request_index].event_cycle << endl; });
 
                 // send data back to the core cache hierarchy
+#ifdef CXL_DEBUG                            
+                std::cout<<"DRAM return: "<< hex << queue->entry[request_index].address <<dec<<"|" << current_core_cycle[op_cpu] <<std::endl;
+#endif                
                 upper_level_dcache[op_cpu]->return_data(&queue->entry[request_index]);
 
                 if (bank_request[op_channel][op_rank][op_bank].row_buffer_hit)
@@ -438,7 +468,6 @@ int MEMORY_CONTROLLER::add_rq(PACKET *packet)
             upper_level_icache[packet->cpu]->return_data(packet);
         else // data
             upper_level_dcache[packet->cpu]->return_data(packet);
-
         return -1;
     }
 

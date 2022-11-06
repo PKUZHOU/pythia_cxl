@@ -5,7 +5,7 @@ import argparse
 
 def parse_args():
     parser = argparse.ArgumentParser(description='Experiments')
-    parser.add_argument('--exp_tag', type=str, default='hybrid_bloom_v13',
+    parser.add_argument('--exp_tag', type=str, default='short_cut_v2',
                         help='the purpose of this experiment')
     parser.add_argument('--filter_list', type=str, default='./filter_list')
     parser.add_argument('--results_dir', type=str, default='./experiments/isca/',

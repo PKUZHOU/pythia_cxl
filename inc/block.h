@@ -69,7 +69,8 @@ class PACKET {
             translated,
             fetched,
             prefetched,
-            drc_tag_read;
+            drc_tag_read,
+            issued_to_dram;
 
     int fill_level, 
         pf_origin_level,
@@ -119,7 +120,7 @@ class PACKET {
         fetched = 0;
         prefetched = 0;
         drc_tag_read = 0;
-
+        issued_to_dram = 0;
         returned = 0;
         asid[0] = UINT8_MAX;
         asid[1] = UINT8_MAX;

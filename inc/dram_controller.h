@@ -6,7 +6,9 @@
 // DRAM configuration
 #define DRAM_CHANNEL_WIDTH 8 // 8B
 #define DRAM_WQ_SIZE 64
-#define DRAM_RQ_SIZE 64
+// #define DRAM_RQ_SIZE 64
+
+#define DRAM_RQ_SIZE 128
 
 #define tRP_DRAM_NANOSECONDS  15
 #define tRCD_DRAM_NANOSECONDS 15
@@ -119,6 +121,7 @@ class MEMORY_CONTROLLER : public MEMORY {
     uint64_t get_bank_earliest_cycle();
 
     int check_dram_queue(PACKET_QUEUE *queue, PACKET *packet);
+    void remove_rq(uint32_t channel, PACKET *packet);
 };
 
 #endif

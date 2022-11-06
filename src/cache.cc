@@ -1,6 +1,7 @@
 #include <algorithm>
 #include "cache.h"
 #include "set.h"
+#include "dram_controller.h"
 
 uint64_t l2pf_access = 0;
 
@@ -831,6 +832,23 @@ void CACHE::handle_read()
         else
           update_replacement_state(read_cpu, set, way, block[set][way].full_addr, RQ.entry[index].ip, 0, RQ.entry[index].type, 1);
 
+        //remove DRAM queue data
+        if (cache_type == IS_PFB)
+        {
+          auto device_dram = (MEMORY_CONTROLLER *)lower_level;
+          uint32_t channel = device_dram->dram_get_channel(RQ.entry[index].address);
+          
+          int dram_rq_index = device_dram->check_dram_queue(&device_dram->RQ[channel], &RQ.entry[index]);
+          // the read packet is still waiting in DRAM's queue. 
+          if(dram_rq_index != -1)
+          {
+#ifdef CXL_DEBUG            
+            std::cout<<"Removed request from DRAM RQ: "<< hex << RQ.entry[index].address << dec << "|"<<current_core_cycle[read_cpu] <<std::endl;
+#endif            
+            device_dram->remove_rq(channel, &RQ.entry[index]);
+          }
+        }
+
         // COLLECT STATS
         sim_hit[read_cpu][RQ.entry[index].type]++;
         sim_access[read_cpu][RQ.entry[index].type]++;
@@ -842,6 +860,9 @@ void CACHE::handle_read()
             upper_level_icache[read_cpu]->return_data(&RQ.entry[index]);
           else // data
             upper_level_dcache[read_cpu]->return_data(&RQ.entry[index]);
+#ifdef CXL_DEBUG
+          std::cout<<"PFB Hit Return: "<< hex<< RQ.entry[index].address << dec <<" |"<<current_core_cycle[read_cpu]<<std::endl;
+#endif
         }
 
         // update prefetch stats and reset prefetch bit
@@ -857,7 +878,11 @@ void CACHE::handle_read()
         ACCESS[RQ.entry[index].type]++;
 
         // remove this entry from RQ
+#ifdef CXL_DEBUG
+          cout<<"PFB RQ removed (hit): "<<hex<<RQ.entry[index].address<< "| "<<dec<< current_core_cycle[read_cpu]<<endl;
+#endif
         RQ.remove_queue(&RQ.entry[index]);
+        // std::cout<<"Remove RQ PFB Hit: "<<RQ.entry[index].address <<" |"<<current_core_cycle[read_cpu]<<std::endl;
         reads_available_this_cycle--;
       }
       else // read miss
@@ -874,9 +899,29 @@ void CACHE::handle_read()
 
         if ((mshr_index == -1) && (MSHR.occupancy < MSHR_SIZE)) // this is a new miss
         {
-          if (cache_type == IS_PFB)
+          if (cache_type == IS_CXL)
           {
-            // check to make sure the DRAM RQ has room for this PFB read miss
+#ifdef WITH_PFB
+            auto pfb = lower_level;
+            auto device_dram = lower_level->lower_level;
+ 
+            // issue to DRAM
+            add_mshr(&RQ.entry[index]); // must add to mshr before add to DRAM rq
+            // issue to PFB
+            pfb->add_rq(&RQ.entry[index]);
+#ifdef CXL_DEBUG
+            cout<<"CXL RD issued to PFB: "<<hex<<RQ.entry[index].address<< "| "<<dec<< current_core_cycle[read_cpu]<<endl;
+#endif 
+            if(!(device_dram->get_occupancy(1, RQ.entry[index].address) == device_dram->get_size(1, RQ.entry[index].address))){
+              RQ.entry[index].issued_to_dram = 1;
+              // std::cout<<"Issued to DRAM: "<<RQ.entry[index].address<<std::endl;
+              device_dram->add_rq(&RQ.entry[index]);
+#ifdef CXL_DEBUG
+              cout<<"CXL RD issued to DRAM: "<<hex<<RQ.entry[index].address<< "| "<<dec<< current_core_cycle[read_cpu]<<endl;
+#endif
+            }
+            // if DRAM is full, do not issue to DRAM 
+#else
             if (lower_level->get_occupancy(1, RQ.entry[index].address) == lower_level->get_size(1, RQ.entry[index].address))
             {
               miss_handled = 0;
@@ -888,6 +933,33 @@ void CACHE::handle_read()
               {
                 lower_level->add_rq(&RQ.entry[index]);
               }
+            }
+#endif
+          }
+
+          else if (cache_type == IS_PFB)
+          {
+            // Check if the CXL control has already put the request to DRAM 
+            if (RQ.entry[index].issued_to_dram == 0)
+            {
+              // std::cout<<"Index "<< index <<std::endl;
+              if (lower_level->get_occupancy(1, RQ.entry[index].address) == lower_level->get_size(1, RQ.entry[index].address))
+              {
+                miss_handled = 0;
+              }
+              else
+              {
+                add_mshr(&RQ.entry[index]);
+                lower_level->add_rq(&RQ.entry[index]);
+#ifdef CXL_DEBUG            
+                std::cout<<"PFB MSHR ADD "<< hex <<RQ.entry[index].address<< "| "<<dec<< current_core_cycle[read_cpu]<<endl;
+#endif                     
+              }
+            }
+            else{
+#ifdef CXL_DEBUG            
+               std::cout<<"PFB bypass "<< RQ.entry[index].address<<std::endl;
+#endif            
             }
           }
           else
@@ -1048,6 +1120,9 @@ void CACHE::handle_read()
           ACCESS[RQ.entry[index].type]++;
 
           // remove this entry from RQ
+#ifdef CXL_DEBUG
+          cout<<"PFB RQ removed (miss): "<<hex<<RQ.entry[index].address<< "| "<<dec<< current_core_cycle[read_cpu]<<endl;
+#endif
           RQ.remove_queue(&RQ.entry[index]);
           reads_available_this_cycle--;
         }
@@ -1247,7 +1322,7 @@ void CACHE::handle_prefetch()
             }
             else if (cache_type == IS_PFB)
             {
-              if (lower_level->get_occupancy(1, PQ.entry[index].address) == lower_level->get_size(1, PQ.entry[index].address))
+              if (lower_level->get_occupancy(1, PQ.entry[index].address) == lower_level->get_size(1, RQ.entry[index].address))
               {
                 miss_handled = 0;
               }
@@ -1269,7 +1344,10 @@ void CACHE::handle_prefetch()
                 {
                   add_mshr(&PQ.entry[index]);
                 }
-                lower_level->add_rq(&PQ.entry[index]); // add it to the PFB RQ
+#ifdef CXL_DEBUG
+                cout<<"PFB PF added to DRAM RQ: "<<hex<< PQ.entry[index].address << dec<< " CPU cycle: " <<current_core_cycle[cpu]<< "Event cycle: "<<PQ.entry[index].event_cycle<< endl;
+#endif                
+                lower_level->add_rq(&PQ.entry[index]); // add it to the DRAM RQ
               }
             }
             else if (cache_type == IS_CXL)
@@ -1949,6 +2027,23 @@ void CACHE::return_data(PACKET *packet)
   // sanity check
   if (mshr_index == -1)
   {
+    if (cache_type == IS_PFB){
+      // this is a requst directly issued from CXL to DRAM. 
+      uint32_t read_cpu = RQ.entry[RQ.head].cpu;
+      if (read_cpu == NUM_CPUS)
+      {
+        return;
+      }
+
+      upper_level_dcache[read_cpu]->return_data(packet);
+      return;
+    }
+
+    if (cache_type == IS_CXL){
+      // drop the second return
+      return;
+    }
+
     cerr << "[" << NAME << "_MSHR] " << __func__ << " instr_id: " << packet->instr_id << " cannot find a matching entry!";
     cerr << " full_addr: " << hex << packet->full_addr;
     cerr << " address: " << packet->address << dec;
