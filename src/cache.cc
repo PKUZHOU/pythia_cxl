@@ -845,7 +845,7 @@ void CACHE::handle_read()
 #ifdef CXL_DEBUG            
             std::cout<<"Removed request from DRAM RQ: "<< hex << RQ.entry[index].address << dec << "|"<<current_core_cycle[read_cpu] <<std::endl;
 #endif            
-            device_dram->remove_rq(channel, &RQ.entry[index]);
+            device_dram->remove_rq(channel, &device_dram->RQ[channel].entry[dram_rq_index]);
           }
         }
 
@@ -1151,6 +1151,33 @@ void CACHE::handle_prefetch()
       return;
     }
 
+    // for active prefetching 
+
+    if (cache_type == IS_PFB)
+    {
+      for(int i = 0; i< PQ.SIZE;i++)
+      {
+        if(PQ.entry[i].address!=0 && PQ.entry[i].fill_level == FILL_LLC)
+        {
+          auto llc = upper_level_dcache[prefetch_cpu]->upper_level_dcache[prefetch_cpu];
+          if(llc->PQ.occupancy < llc->PQ.SIZE)
+          {
+            PQ.entry[i].active_pref = 1; // should go to llc
+            PQ.entry[i].pf_origin_level = FILL_LLC;
+            llc->add_pq(&PQ.entry[i]);
+            // cout<<"LLC Added PF: "<<hex<<PQ.entry[i].address<<endl;
+            // PQ.delete_packet(&PQ.entry[i]);
+          }
+          else
+          {
+            // still prefetch to PFB
+            PQ.entry[i].active_pref = 0;
+            PQ.entry[i].fill_level = FILL_PFB; 
+          }
+        }
+      }
+    }
+
     // handle the oldest entry
     if ((PQ.entry[PQ.head].event_cycle <= current_core_cycle[prefetch_cpu]) && (PQ.occupancy > 0))
     {
@@ -1194,6 +1221,7 @@ void CACHE::handle_prefetch()
         }
         else if (cache_type == IS_PFB)
         {
+          if(!PQ.entry[index].active_pref)
           pfb_prefetcher_prefetch_hit(block[set][way].address << LOG2_BLOCK_SIZE, PQ.entry[index].ip, PQ.entry[index].pf_metadata);
         }
         // run prefetcher on prefetches from higher caches
@@ -1215,9 +1243,12 @@ void CACHE::handle_prefetch()
           }
           else if (cache_type == IS_PFB)
           {
-            cpu = prefetch_cpu;
-            PQ.entry[index].pf_metadata = pfb_prefetcher_operate(block[set][way].address << LOG2_BLOCK_SIZE, PQ.entry[index].ip, 1, PREFETCH, PQ.entry[index].pf_metadata);
-            cpu = 0;
+            if(!PQ.entry[index].active_pref)
+            {
+              cpu = prefetch_cpu;
+              PQ.entry[index].pf_metadata = pfb_prefetcher_operate(block[set][way].address << LOG2_BLOCK_SIZE, PQ.entry[index].ip, 1, PREFETCH, PQ.entry[index].pf_metadata);
+              cpu = 0;
+            }
           }
         }
 
@@ -1334,9 +1365,12 @@ void CACHE::handle_prefetch()
 #ifdef PF_ON_PF
                   if (cache_type == IS_PFB)
                   {
-                    cpu = prefetch_cpu;
-                    PQ.entry[index].pf_metadata = pfb_prefetcher_operate(PQ.entry[index].address << LOG2_BLOCK_SIZE, PQ.entry[index].ip, 0, PREFETCH, PQ.entry[index].pf_metadata);
-                    cpu = 0;
+                    if(!PQ.entry[index].active_pref)
+                    {
+                      cpu = prefetch_cpu;
+                      PQ.entry[index].pf_metadata = pfb_prefetcher_operate(PQ.entry[index].address << LOG2_BLOCK_SIZE, PQ.entry[index].ip, 0, PREFETCH, PQ.entry[index].pf_metadata);
+                      cpu = 0;
+                    }
                   }
 #endif
                 }
@@ -2098,6 +2132,7 @@ void CACHE::update_fill_cycle()
   }
 
   MSHR.next_fill_cycle = min_cycle;
+
   MSHR.next_fill_index = min_index;
   if (min_index < MSHR.SIZE)
   {

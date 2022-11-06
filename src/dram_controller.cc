@@ -25,7 +25,6 @@ void MEMORY_CONTROLLER::reset_remain_requests(PACKET_QUEUE *queue, uint32_t chan
 {
     for (uint32_t i=0; i<queue->SIZE; i++) {
         if (queue->entry[i].scheduled) {
-
             uint64_t op_addr = queue->entry[i].address;
             uint32_t op_cpu = queue->entry[i].cpu,
                      op_channel = dram_get_channel(op_addr), 
@@ -58,6 +57,10 @@ void MEMORY_CONTROLLER::reset_remain_requests(PACKET_QUEUE *queue, uint32_t chan
             }
 
             queue->entry[i].scheduled = 0;
+                        
+#ifdef CXL_DEBUG
+            cout<< "Rescheduled: "<<hex<<queue->entry[i].address <<dec<< endl;
+#endif 
             queue->entry[i].event_cycle = current_core_cycle[op_cpu];
 
             DP ( if (warmup_complete[op_cpu]) {
@@ -164,12 +167,6 @@ void MEMORY_CONTROLLER::schedule(PACKET_QUEUE *queue)
 
         // bank is busy
         if (bank_request[read_channel][read_rank][read_bank].working) { // should we check this or not? how do we know if bank is busy or not for all requests in the queue?
-
-            //DP ( if (warmup_complete[0]) {
-            //cout << queue->NAME << " " << __func__ << " instr_id: " << queue->entry[i].instr_id << " bank is busy";
-            //cout << " swrites: " << scheduled_writes[channel] << " sreads: " << scheduled_reads[channel];
-            //cout << " write: " << +bank_request[read_channel][read_rank][read_bank].is_write << " read: " << +bank_request[read_channel][read_rank][read_bank].is_read << hex;
-            //cout << " address: " << queue->entry[i].address << dec << " channel: " << read_channel << " rank: " << read_rank << " bank: " << read_bank << endl; });
 
             continue;
         }
@@ -291,27 +288,11 @@ void MEMORY_CONTROLLER::schedule(PACKET_QUEUE *queue)
 void MEMORY_CONTROLLER::remove_rq(uint32_t channel, PACKET *packet)
 {
     int dram_rq_index = check_dram_queue(&RQ[channel], packet);
+    if(RQ[channel].entry[dram_rq_index].scheduled) return; // already running
 
-    if(RQ[channel].entry[dram_rq_index].scheduled) return;
-
-#ifdef CXL_DEBUG
-    cout<<"Remove Unscheduled"<<endl;
-#endif
-
-    // RQ[channel].entry[dram_rq_index].address = 0;
-    // if (RQ[channel].entry[dram_rq_index].scheduled){
-    //     RQ[channel].entry[dram_rq_index].scheduled = 0;
-    //     scheduled_reads[channel]--;
-    // }
     RQ[channel].remove_queue(&RQ[channel].entry[dram_rq_index]);
 
-    // RQ[channel].occupancy--;
-    // RQ[channel].head++;
-    // if (RQ[channel].head >= RQ[channel].SIZE)
-    //     RQ[channel].head = 0;
-    
     rq_enqueue_count--;
-    // reset_remain_requests(&RQ[channel], channel);
     update_schedule_cycle(&RQ[channel]);
 }
 

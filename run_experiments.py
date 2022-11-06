@@ -9,14 +9,14 @@ DEBUG = False
 
 def parse_args():
     parser = argparse.ArgumentParser(description='Experiments')
-    parser.add_argument('--exp_tag', type=str, default='no_pf_on_pf', help='the purpose of this experiment')
+    parser.add_argument('--exp_tag', type=str, default='test_active', help='the purpose of this experiment')
     parser.add_argument('--max_threads',type=int,default='64')
     parser.add_argument('--trace_dir', type=str, default='./traces/spec_select', help='root directory of trace')
     parser.add_argument('--results_dir', type=str, default='./experiments/isca/', help='root directory to save all results')
     
     parser.add_argument('--l1_pref', type=list, default=['multi'])
-    parser.add_argument('--l2_pref', type=list, default=['streamer']) 
-    parser.add_argument('--pfb_pref', type=list, default=['hybrid'])
+    parser.add_argument('--l2_pref', type=list, default=['scooby']) 
+    parser.add_argument('--pfb_pref', type=list, default=['hybrid_active'])
 
     parser.add_argument('--llc_pref',type=list, default=['no'])
 

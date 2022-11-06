@@ -311,7 +311,8 @@ void print_deadlock(uint32_t i)
     cout << " current: " << current_core_cycle[i] << endl;
 
     // print DRAM queue data
-    cout << endl << "DRAM RQ Occupancy: " << uncore.DRAM.RQ[0].occupancy<<endl;
+    cout << endl << "DRAM Next Schedule Index : " << uncore.DRAM.RQ[0].next_schedule_index << " Event: "<< dec<< uncore.DRAM.RQ[0].next_schedule_cycle <<endl;
+    cout << endl << "DRAM Next Processing Index : " << uncore.DRAM.RQ[0].next_process_index << " Event: "<< dec<< uncore.DRAM.RQ[0].next_process_cycle <<endl;
 
     // print LQ entry
     cout << endl << "Load Queue Entry" << endl;

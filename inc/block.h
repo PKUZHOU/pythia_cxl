@@ -70,7 +70,8 @@ class PACKET {
             fetched,
             prefetched,
             drc_tag_read,
-            issued_to_dram;
+            issued_to_dram,
+            active_pref;
 
     int fill_level, 
         pf_origin_level,
@@ -134,6 +135,7 @@ class PACKET {
         depth = 0;
         signature = 0;
         confidence = 0;
+        active_pref = 0;
 
 #if 0
         for (uint32_t i=0; i<ROB_SIZE; i++) {
@@ -261,7 +263,8 @@ class PACKET_QUEUE {
     // functions
     int check_queue(PACKET* packet);
     void add_queue(PACKET* packet),
-         remove_queue(PACKET* packet);
+         remove_queue(PACKET* packet),
+         delete_packet(PACKET *packet);
 };
 
 // reorder buffer
