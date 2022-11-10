@@ -99,7 +99,7 @@ void print_cache_config()
        << "cxl_channel_pq_size " << CXL_PQ_SIZE << endl
        << "cxl_channel_mshr_size " << CXL_MSHR_SIZE << endl
        << "cxl_channel_latency " << CXL_LATENCY << endl
-       << endl;
+       << "cxl_bus_return_time " << int(BLOCK_SIZE * (1.0 * CPU_FREQ / CXL_BW)) <<endl;
 }
 
 void CACHE::handle_fill()
@@ -1363,14 +1363,11 @@ void CACHE::handle_prefetch()
                 if (PQ.entry[index].pf_origin_level < fill_level)
                 {
 #ifdef PF_ON_PF
-                  if (cache_type == IS_PFB)
+                  if(!PQ.entry[index].active_pref)
                   {
-                    if(!PQ.entry[index].active_pref)
-                    {
-                      cpu = prefetch_cpu;
-                      PQ.entry[index].pf_metadata = pfb_prefetcher_operate(PQ.entry[index].address << LOG2_BLOCK_SIZE, PQ.entry[index].ip, 0, PREFETCH, PQ.entry[index].pf_metadata);
-                      cpu = 0;
-                    }
+                    cpu = prefetch_cpu;
+                    PQ.entry[index].pf_metadata = pfb_prefetcher_operate(PQ.entry[index].address << LOG2_BLOCK_SIZE, PQ.entry[index].ip, 0, PREFETCH, PQ.entry[index].pf_metadata);
+                    cpu = 0;
                   }
 #endif
                 }
@@ -2131,7 +2128,21 @@ void CACHE::update_fill_cycle()
         cout << " event: " << MSHR.entry[i].event_cycle << " current: " << current_core_cycle[MSHR.entry[i].cpu] << " next: " << MSHR.next_fill_cycle << endl; });
   }
 
-  MSHR.next_fill_cycle = min_cycle;
+  if(BUS_RETURN_TIME > 0)
+  {
+    if(bus_cycle_available <= min_cycle){
+      MSHR.next_fill_cycle = min_cycle;
+      bus_cycle_available = min_cycle + BUS_RETURN_TIME;
+    }
+    else{
+      MSHR.next_fill_cycle = bus_cycle_available;
+      bus_cycle_available += BUS_RETURN_TIME;
+    }
+  }
+  else
+  {
+    MSHR.next_fill_cycle = min_cycle;
+  }
 
   MSHR.next_fill_index = min_index;
   if (min_index < MSHR.SIZE)

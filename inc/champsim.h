@@ -27,6 +27,7 @@
 #define CXL_BYPASS
 #define DRC_BYPASS
 
+// #define CXL_DEBUG
 //#define WITH_PFB
 //#define WITH_CXL
 

@@ -390,10 +390,10 @@ int parse_knobs(void* user, const char* section, const char* name, const char* v
     {
 		knob::measure_ipc_epoch = atoi(value);
     }
-    else if (MATCH("", "dram_io_freq"))
-    {
-		knob::dram_io_freq = atoi(value);
-    }
+    // else if (MATCH("", "dram_io_freq"))
+    // {
+	// 	knob::dram_io_freq = atoi(value);
+    // }
     else if (MATCH("", "measure_dram_bw"))
     {
 		knob::measure_dram_bw = !strcmp(value, "true") ? true : false;

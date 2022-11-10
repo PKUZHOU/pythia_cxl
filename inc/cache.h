@@ -91,6 +91,10 @@ extern uint32_t PAGE_TABLE_LATENCY, SWAP_LATENCY;
     #define CXL_LATENCY 1
 #endif
 
+#ifndef CXL_BW
+    #define CXL_BW 64000
+#endif
+
 #define CXL_RQ_SIZE LLC_MSHR_SIZE
 #define CXL_WQ_SIZE LLC_MSHR_SIZE
 #define CXL_PQ_SIZE LLC_MSHR_SIZE
@@ -129,6 +133,7 @@ public:
     const string NAME;
     const uint32_t NUM_SET, NUM_WAY, NUM_LINE, WQ_SIZE, RQ_SIZE, PQ_SIZE, MSHR_SIZE;
     uint32_t LATENCY;
+    uint64_t BUS_RETURN_TIME;
     BLOCK **block;
     int fill_level;
     uint32_t MAX_READ, MAX_FILL;
@@ -176,13 +181,14 @@ public:
     uint32_t pref_acc;
     uint64_t total_acc_epochs, acc_epoch_hist[CACHE_ACC_LEVELS];
 
+    uint64_t bus_cycle_available;
     // constructor
     CACHE(string v1, uint32_t v2, int v3, uint32_t v4, uint32_t v5, uint32_t v6, uint32_t v7, uint32_t v8)
         : NAME(v1), NUM_SET(v2), NUM_WAY(v3), NUM_LINE(v4), WQ_SIZE(v5), RQ_SIZE(v6), PQ_SIZE(v7), MSHR_SIZE(v8)
     {
 
         LATENCY = 0;
-
+        BUS_RETURN_TIME = 0;
         // cache block
         block = new BLOCK *[NUM_SET];
         for (uint32_t i = 0; i < NUM_SET; i++)
@@ -233,7 +239,7 @@ public:
         pf_filled_epoch = 0;
         pref_acc = 0;
         total_acc_epochs = 0;
-
+        bus_cycle_available = 0;
         bw_compute_epoch = 0;
     };
 

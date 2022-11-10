@@ -294,7 +294,9 @@ void finish_warmup()
 #endif
 
 #ifdef WITH_CXL
-    uncore.CXL.LATENCY = CXL_LATENCY;
+    uncore.CXL.LATENCY = CXL_LATENCY *  CPU_FREQ / 2000 / 2;
+    uint64_t cxl_bus_return_time = BLOCK_SIZE * (1.0 * CPU_FREQ / CXL_BW);
+    uncore.CXL.BUS_RETURN_TIME = cxl_bus_return_time;
 #endif
 
 }
@@ -612,7 +614,7 @@ void print_knobs()
         << endl;
     cout << "num_cpus " << NUM_CPUS << endl
         << "cpu_freq " << CPU_FREQ << endl
-        << "dram_io_freq " << knob::dram_io_freq << endl
+        << "dram_io_freq " << DRAM_IO_FREQ << endl
         << "page_size " << PAGE_SIZE << endl
         << "block_size " << BLOCK_SIZE << endl
         << "max_read_per_cycle " << MAX_READ_PER_CYCLE << endl
@@ -695,9 +697,9 @@ int main(int argc, char** argv)
     }
 
     if (knob::knob_low_bandwidth)
-        DRAM_MTPS = knob::dram_io_freq/4;
+        DRAM_MTPS = DRAM_IO_FREQ/4;
     else
-        DRAM_MTPS = knob::dram_io_freq;
+        DRAM_MTPS = DRAM_IO_FREQ;
 
     // DRAM access latency
     tRP  = (uint32_t)((1.0 * tRP_DRAM_NANOSECONDS  * CPU_FREQ) / 1000);
