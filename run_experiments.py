@@ -4,41 +4,44 @@ import json
 import threading
 from itertools import product
 import time 
+import ast
 
 DEBUG = False
 
 def parse_args():
     parser = argparse.ArgumentParser(description='Experiments')
-    parser.add_argument('--exp_tag', type=str, default='test_active', help='the purpose of this experiment')
+    
+    # Experiment configs
+    parser.add_argument('--exp_tag', type=str, default='explore_active_params', help='the purpose of this experiment')
     parser.add_argument('--max_threads',type=int,default='64')
     parser.add_argument('--trace_dir', type=str, default='./traces/spec_select', help='root directory of trace')
     parser.add_argument('--results_dir', type=str, default='./experiments/isca/', help='root directory to save all results')
-    
-    parser.add_argument('--l1_pref', type=list, default=['multi'])
-    parser.add_argument('--l2_pref', type=list, default=['scooby']) 
-    parser.add_argument('--pfb_pref', type=list, default=['hybrid_active'])
-
-    parser.add_argument('--llc_pref',type=list, default=['no'])
-
     parser.add_argument('--cfg_def_file', type=str, default="./inc/defines.h")
-    parser.add_argument('--enable_cxl', action="store_true", help="enable cxl channel")
-    parser.add_argument('--enable_pfb', action="store_true", help="enable cxl memory prefetch buffer")
+    parser.add_argument('--warmup_inst',type=int, default=50000000, help="gapbs 150m, general 50m")
+    parser.add_argument('--sim_inst',type=int, default=100000000, help='gapbs 50m, general 100m')
+    # Prefetchers
+    parser.add_argument('--l1_pref', type=list, default=['multi'])
+    parser.add_argument('--l2_pref', type=ast.literal_eval, default=['bop_new','streamer'], nargs='+') 
+    parser.add_argument('--pfb_pref', type=ast.literal_eval, default=['hybrid_active'], nargs='+')
     parser.add_argument('--pf_on_pf', action="store_true", help="enable pfb prefetch on prefetch")
-
-    # parser.add_argument('--cxl_latency', type=list, default=[40, 120, 160, 200])
-    parser.add_argument('--cxl_latency', type=list, default=[80])
+    parser.add_argument('--llc_pref',type=list, default=['no'])
+    parser.add_argument('--active_threshold', type=list, default=[0.01, 0.02,0.04,0.08,0.16,0.32,0.64], help="For exploring the active prefetching threshold")
+    parser.add_argument('--warmup_window', type=list, default=[128,256,512,1024,2048], help="For exploring the active prefetching warmup window")
+    # CXL Channel
+    parser.add_argument('--cxl_latency', type=ast.literal_eval, default=[80], help = "nano seconds")
+    parser.add_argument('--enable_cxl', action="store_true", help="enable cxl channel")
+    # PFB configs
+    parser.add_argument('--enable_pfb', action="store_true", help="enable cxl memory prefetch buffer")
     parser.add_argument('--pfb_latency', type=int, default=20)
-
     parser.add_argument('--pfb_sets', type=int, default=4096, help='pfb_sets = 1 to simulate CXL without prefetch buffer')
     parser.add_argument('--pfb_ways', type=int, default=16, help='pfb_ways = 1 to simulate CXL without prefetch buffer')
-
+    # CXL memory configs
     parser.add_argument('--mem_channels', type=int, default=1, help='the memory channels')
     parser.add_argument('--num_cores', type=int, default=1, help='total cores')
     parser.add_argument('--dram_io', type=int, default=4800)
-
+    parser.add_argument('--cxl_bw',type=int, default=64000, help="MB/s")
+    # Branch predictor
     parser.add_argument('--branch_predictor', type=str, default="perceptron")
-    parser.add_argument('--warmup_inst',type=int, default=50000000, help="gapbs 150m, general 50m")
-    parser.add_argument('--sim_inst',type=int, default=100000000, help='gapbs 50m, general 100m')
 
     args = parser.parse_args()
     return args
@@ -74,6 +77,11 @@ def prepare_sim_cmds(args):
     llc_prefs = args.llc_pref
     pfb_prefs = args.pfb_pref
     
+    if(isinstance(l2_prefs[0],list)):
+        l2_prefs = l2_prefs[0]
+    if(isinstance(pfb_prefs[0],list)):
+        pfb_prefs = pfb_prefs[0]
+
     all_sim_cmds = []
 
     if args.enable_cxl == False:
@@ -119,15 +127,16 @@ def prepare_sim_cmds(args):
 
             params.append("CXL_LATENCY {}".format(cxl_latency))
             params.append("PFB_LATENCY {}".format(pfb_latency))
-            # params.append("DRAM_IO_FREQ {}".format(args.dram_io))
-            
+            params.append("DRAM_IO_FREQ {}".format(args.dram_io))
+            params.append("CXL_BW {}".format(args.cxl_bw))
+
             with open(args.cfg_def_file,"w") as f:
                 for param in params:
                     f.write("#define {}\n".format(param))
 
             #build binary
             config_cmd = "./build_champsim.sh {l1pref} {l2pref} {llcpref} {pfbpref} {cores}"\
-                .format(l1pref = "multi", l2pref = "multi", llcpref = "no", pfbpref = prefs[3],  cores = args.num_cores)
+                .format(l1pref = "multi", l2pref = "multi" if l2_pref != "bop_new" else l2_pref, llcpref = "no", pfbpref = prefs[3],  cores = args.num_cores)
             exec_cmd(config_cmd)
             
             copy_binary_cmd = "cp ./bin/champsim " + config_result_dir
@@ -148,21 +157,15 @@ def prepare_sim_cmds(args):
                     # trace_name = trace.strip("champsimtrace.xz")
                     trace_path = os.path.join(args.trace_dir, trace)
                     sim_results_path = os.path.join(config_result_dir, trace_name + ".out")
-
-        
                     sim_cmd = "{binary} --warmup_instructions={warmup_inst} --simulation_instructions={sim_inst} ".format(\
                     binary = os.path.join(config_result_dir, "champsim"), warmup_inst = args.warmup_inst, sim_inst = args.sim_inst)                        
-
-
                     if l2_pref == "no":
                         sim_cmd += " --config={l2_pref_config}".format(l2_pref_config=l2_pref_config_path)
                     else:
                         sim_cmd += " --l2c_prefetcher_types={l2pref} --config={l2_pref_config}".format( l2pref = l2_pref,  l2_pref_config=l2_pref_config_path)
-                    
                     if args.enable_pfb and pfb_pref != "no":
                         sim_cmd += " --config={pfb_pref_config}".format(pfb_pref_config = pfb_pref_config_path)
                     sim_cmd += " -traces {trace_dir} > {results_dir}".format(trace_dir = trace_path, results_dir = sim_results_path)
-
                     all_sim_cmds.append(sim_cmd)
                     f.write(sim_cmd + "\n")
             else:

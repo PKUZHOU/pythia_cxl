@@ -10,9 +10,13 @@
 
 #define DRAM_RQ_SIZE 128
 
-#define tRP_DRAM_NANOSECONDS  15
-#define tRCD_DRAM_NANOSECONDS 15
-#define tCAS_DRAM_NANOSECONDS 12.5
+// #define tRP_DRAM_NANOSECONDS  15
+// #define tRCD_DRAM_NANOSECONDS 15
+// #define tCAS_DRAM_NANOSECONDS 12.5
+
+#define tRP_DRAM_NANOSECONDS  16
+#define tRCD_DRAM_NANOSECONDS 16
+#define tCAS_DRAM_NANOSECONDS 16
 
 // the data bus must wait this amount of time when switching between reads and writes, and vice versa
 #define DRAM_DBUS_TURN_AROUND_TIME ((15*CPU_FREQ)/2000) // 7.5 ns 
