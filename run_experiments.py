@@ -12,9 +12,9 @@ def parse_args():
     parser = argparse.ArgumentParser(description='Experiments')
     
     # Experiment configs
-    parser.add_argument('--exp_tag', type=str, default='explore_active_params', help='the purpose of this experiment')
+    parser.add_argument('--exp_tag', type=str, default='multi_core_base', help='the purpose of this experiment')
     parser.add_argument('--max_threads',type=int,default='64')
-    parser.add_argument('--trace_dir', type=str, default='./traces/spec_select', help='root directory of trace')
+    parser.add_argument('--trace_dir', type=str, default='./traces/', help='root directory of trace')
     parser.add_argument('--results_dir', type=str, default='./experiments/isca/', help='root directory to save all results')
     parser.add_argument('--cfg_def_file', type=str, default="./inc/defines.h")
     parser.add_argument('--warmup_inst',type=int, default=50000000, help="gapbs 150m, general 50m")
@@ -25,8 +25,6 @@ def parse_args():
     parser.add_argument('--pfb_pref', type=ast.literal_eval, default=['hybrid_active'], nargs='+')
     parser.add_argument('--pf_on_pf', action="store_true", help="enable pfb prefetch on prefetch")
     parser.add_argument('--llc_pref',type=list, default=['no'])
-    parser.add_argument('--active_threshold', type=list, default=[0.01, 0.02,0.04,0.08,0.16,0.32,0.64], help="For exploring the active prefetching threshold")
-    parser.add_argument('--warmup_window', type=list, default=[128,256,512,1024,2048], help="For exploring the active prefetching warmup window")
     # CXL Channel
     parser.add_argument('--cxl_latency', type=ast.literal_eval, default=[80], help = "nano seconds")
     parser.add_argument('--enable_cxl', action="store_true", help="enable cxl channel")
@@ -129,6 +127,7 @@ def prepare_sim_cmds(args):
             params.append("PFB_LATENCY {}".format(pfb_latency))
             params.append("DRAM_IO_FREQ {}".format(args.dram_io))
             params.append("CXL_BW {}".format(args.cxl_bw))
+            # params.append("NUM_CPUS {}".format(args.num_cores))
 
             with open(args.cfg_def_file,"w") as f:
                 for param in params:
@@ -169,19 +168,35 @@ def prepare_sim_cmds(args):
                     all_sim_cmds.append(sim_cmd)
                     f.write(sim_cmd + "\n")
             else:
-                raise NotImplementedError
-                # all_traces_cmd = ""
-                # trace_name = ""
-                # for trace in os.listdir(args.trace_dir):
-                #     trace_path = os.path.join(args.trace_dir, trace)
-                #     if len(trace_name) == 0: trace_name = trace.split(".")[0]
-                #     trace_path = os.path.join(args.trace_dir, trace)
-                #     all_traces_cmd+=trace_path
-                #     all_traces_cmd+=" "
-                # sim_results_path = os.path.join(config_result_dir, trace_name + ".out")
-                # sim_cmd = "{binary} --warmup_instructions {warmup_inst} --simulation_instructions {sim_inst} {trace_dir} > {results_dir}".format(\
-                #         binary = os.path.join(config_result_dir, "champsim"), warmup_inst = args.warmup_inst, sim_inst = args.sim_inst, trace_dir = all_traces_cmd, results_dir = sim_results_path)
-                # all_sim_cmds.append(sim_cmd)
+                multi_core_trace_file_path = os.path.join(args.trace_dir, "multi_core/{}core.txt".format(args.num_cores))
+                print(multi_core_trace_file_path)
+                assert(os.path.exists(multi_core_trace_file_path))
+                mix_traces = []
+                with open(multi_core_trace_file_path) as f2:
+                    lines = f2.readlines()
+                    for line in lines:
+                        mix_traces.append(eval(line))
+
+                for trace_id, mix  in enumerate(mix_traces):
+                    all_traces_cmd = ""
+                    trace_name = "mix_{}".format(trace_id)
+                    for trace in mix:
+                        trace_path = os.path.join(args.trace_dir, trace)
+                        all_traces_cmd+=trace_path
+                        all_traces_cmd+=" "
+                    sim_results_path = os.path.join(config_result_dir, trace_name + ".out")
+                    sim_cmd = "{binary} --warmup_instructions={warmup_inst} --simulation_instructions={sim_inst} ".format(\
+                    binary = os.path.join(config_result_dir, "champsim"), warmup_inst = args.warmup_inst, sim_inst = args.sim_inst)                        
+                    if l2_pref == "no":
+                        sim_cmd += " --config={l2_pref_config}".format(l2_pref_config=l2_pref_config_path)
+                    else:
+                        sim_cmd += " --l2c_prefetcher_types={l2pref} --config={l2_pref_config}".format( l2pref = l2_pref,  l2_pref_config=l2_pref_config_path)
+                    if args.enable_pfb and pfb_pref != "no":
+                        sim_cmd += " --config={pfb_pref_config}".format(pfb_pref_config = pfb_pref_config_path)
+                    sim_cmd += " -traces {trace_dir} > {results_dir}".format(trace_dir = all_traces_cmd, results_dir = sim_results_path)
+                    all_sim_cmds.append(sim_cmd)
+                    f.write(sim_cmd + "\n")
+
 
     return all_sim_cmds
 
