@@ -25,6 +25,7 @@ def parse_args():
     parser.add_argument('--pfb_pref', type=ast.literal_eval, default=['hybrid_active'], nargs='+')
     parser.add_argument('--pf_on_pf', action="store_true", help="enable pfb prefetch on prefetch")
     parser.add_argument('--llc_pref',type=list, default=['no'])
+    parser.add_argument('--active_threshold', type=float, default=0.02, help="the active prefetching threshold")
     # CXL Channel
     parser.add_argument('--cxl_latency', type=ast.literal_eval, default=[80], help = "nano seconds")
     parser.add_argument('--enable_cxl', action="store_true", help="enable cxl channel")
@@ -127,6 +128,8 @@ def prepare_sim_cmds(args):
             params.append("PFB_LATENCY {}".format(pfb_latency))
             params.append("DRAM_IO_FREQ {}".format(args.dram_io))
             params.append("CXL_BW {}".format(args.cxl_bw))
+            params.append("ACTIVE_THRESH {}".format(args.active_threshold))
+
             params.append("DRAM_CHANNELS {}".format(args.mem_channels))
             log2_dram_channels = 0 
             if args.mem_channels == 2: log2_dram_channels = 1
