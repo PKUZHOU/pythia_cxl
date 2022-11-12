@@ -200,6 +200,7 @@ void CACHE::handle_fill()
 #ifdef LLC_BYPASS
     if ((cache_type == IS_LLC) && (way == LLC_WAY)) // this is a bypass that does not fill the LLC
     {
+      // cout<<"LLC_BYPASS_FOUND"<<endl;
       // update replacement policy
       if (cache_type == IS_LLC)
       {
@@ -1157,15 +1158,16 @@ void CACHE::handle_prefetch()
     {
       for(int i = 0; i< PQ.SIZE;i++)
       {
-        if(PQ.entry[i].address!=0 && PQ.entry[i].fill_level == FILL_LLC)
+        if(PQ.entry[i].address!=0 && PQ.entry[i].fill_level == FILL_LLC && PQ.entry[i].pf_origin_level == FILL_PFB)
         {
-          auto llc = upper_level_dcache[prefetch_cpu]->upper_level_dcache[prefetch_cpu];
+          auto llc = (CACHE*)upper_level_dcache[prefetch_cpu]->upper_level_dcache[prefetch_cpu];
           if(llc->PQ.occupancy < llc->PQ.SIZE)
           {
             PQ.entry[i].active_pref = 1; // should go to llc
             PQ.entry[i].pf_origin_level = FILL_LLC;
             llc->add_pq(&PQ.entry[i]);
             // cout<<"LLC Added PF: "<<hex<<PQ.entry[i].address<<endl;
+            // cout << "FILL_LEVEL: "<<llc->fill_level;
             // PQ.delete_packet(&PQ.entry[i]);
           }
           else
@@ -1464,7 +1466,12 @@ void CACHE::handle_prefetch()
             // update fill_level
             if (PQ.entry[index].fill_level < MSHR.entry[mshr_index].fill_level)
             {
-              MSHR.entry[mshr_index].fill_level = PQ.entry[index].fill_level;
+              // cout<<"Merge early pref. "<<hex<<PQ.entry[index].address<<dec<< "PQ CPU: "<<PQ.entry[index].cpu << "MSHR CPU: "<<MSHR.entry[mshr_index].cpu<< endl;
+              if(MSHR.entry[mshr_index].fill_level == FILL_LLC)
+              {
+                MSHR.entry[mshr_index].cpu = PQ.entry[index].cpu;
+              }
+                MSHR.entry[mshr_index].fill_level = PQ.entry[index].fill_level;
             }
 
             MSHR_MERGED[PQ.entry[index].type]++;
@@ -1986,6 +1993,8 @@ int CACHE::add_pq(PACKET *packet)
     if (packet->fill_level < PQ.entry[index].fill_level)
     {
       PQ.entry[index].fill_level = packet->fill_level;
+      // avoides multicore active prefetching bug
+      PQ.entry[index].cpu = packet->cpu;
     }
 
     PQ.MERGED++;
@@ -2077,10 +2086,14 @@ void CACHE::return_data(PACKET *packet)
       return;
     }
 
-    cerr << "[" << NAME << "_MSHR] " << __func__ << " instr_id: " << packet->instr_id << " cannot find a matching entry!";
-    cerr << " full_addr: " << hex << packet->full_addr;
-    cerr << " address: " << packet->address << dec;
-    cerr << " event: " << packet->event_cycle << " current: " << current_core_cycle[packet->cpu] << endl;
+    cout << "[" << NAME << "_MSHR] " << __func__ << " instr_id: " << packet->instr_id << " cannot find a matching entry!";
+    cout << " full_addr: " << hex << packet->full_addr;
+    cout << " address: " << packet->address << dec;
+    cout << " CPU: " << packet->cpu;
+    cout << " Pf_original_level: "<<packet->pf_origin_level;
+    cout << " is active: "<<int(packet->active_pref);
+    cout << " fill level: "<<packet->fill_level;
+    cout << " event: " << packet->event_cycle << " current: " << current_core_cycle[packet->cpu] << endl;
     assert(0);
   }
 
