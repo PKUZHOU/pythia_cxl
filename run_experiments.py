@@ -127,7 +127,12 @@ def prepare_sim_cmds(args):
             params.append("PFB_LATENCY {}".format(pfb_latency))
             params.append("DRAM_IO_FREQ {}".format(args.dram_io))
             params.append("CXL_BW {}".format(args.cxl_bw))
-            # params.append("NUM_CPUS {}".format(args.num_cores))
+            params.append("DRAM_CHANNELS {}".format(args.mem_channels))
+            log2_dram_channels = 0 
+            if args.mem_channels == 2: log2_dram_channels = 1
+            if args.mem_channels > 2: log2_dram_channels = 2
+            params.append("LOG2_DRAM_CHANNELS {}".format(log2_dram_channels))
+            params.append("NUM_CPUS {}".format(args.num_cores))
 
             with open(args.cfg_def_file,"w") as f:
                 for param in params:
