@@ -1,22 +1,20 @@
 import os
 import csv
 import argparse
-
+import math
 
 def parse_args():
     parser = argparse.ArgumentParser(description='Experiments')
-    parser.add_argument('--exp_tag', type=str, default='neomem_base_1C',
+    parser.add_argument('--exp_tag', type=str, default='test',
                         help='the purpose of this experiment')
+    parser.add_argument('--num_cores', type=int, default=1, help="Number of cores")
     parser.add_argument('--subset', type=str, default='all')                    
     parser.add_argument('--filter_list', type=str, default='')
-
     parser.add_argument('--results_dir', type=str, default='./experiments/isca/',
                         help='root directory to save all results')
     parser.add_argument('--csv_dir', type=str, default='./csv_results/isca')
-
     args = parser.parse_args()
     return args
-
 
 def run(args):
     out_dir = os.path.join(args.results_dir, args.exp_tag)
@@ -73,11 +71,15 @@ def run(args):
                     with open(file_path, 'r') as f2:
                         lines = f2.readlines()
                         if task == 'ipc':
-                            for line in lines:
-                                if "Core_0_IPC" in line:
-                                    ipc = line.split(" ")[1].strip()
-                                    all_results[config][task_name] = ipc
-                                    print(ipc)
+                            avg_ipc = 0
+                            for core_id in range(args.num_cores):
+                                for line in lines:
+                                    if "Core_{}_IPC".format(core_id) in line:
+                                        ipc = float(line.split(" ")[1].strip())
+                                        avg_ipc += ipc        
+                                        print("Core_{}_IPC".format(core_id), ipc)
+                            all_results[config][task_name] = avg_ipc / args.num_cores
+                                    
 
                         elif task == 'llc_load_miss':
                             for line in lines:
