@@ -22,7 +22,7 @@ def parse_args():
     # Prefetchers
     parser.add_argument('--l1_pref', type=list, default=['multi'])
     parser.add_argument('--l2_pref', type=ast.literal_eval, default=['bop_new','streamer'], nargs='+') 
-    parser.add_argument('--pfb_pref', type=ast.literal_eval, default=['hybrid_active'], nargs='+')
+    parser.add_argument('--pfb_pref', type=ast.literal_eval, default=['no'], nargs='+')
     parser.add_argument('--pf_on_pf', action="store_true", help="enable pfb prefetch on prefetch")
     parser.add_argument('--llc_pref',type=list, default=['no'])
     # CXL Channel
