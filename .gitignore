@@ -20,3 +20,11 @@ tracer/obj-intel64/
 tags
 *.out
 libbf/
+
+
+experiments/isca
+experiments/data
+experiments/test
+
+
+csv_results/*

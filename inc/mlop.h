@@ -167,6 +167,7 @@ private:
 	uint32_t L1D_THRESH;
 	uint32_t L2C_THRESH;
 	uint32_t LLC_THRESH;
+    uint32_t PFB_THRESH;
 	uint32_t ORIGIN;
 	uint32_t NUM_OFFSETS;
     CACHE *parent;

@@ -14,14 +14,19 @@ namespace knob
 	uint64_t simulation_instructions = 1000000;
 	bool  	 knob_cloudsuite = false;
 	bool     knob_low_bandwidth = false;
-	vector<string> 	 l2c_prefetcher_types;
+ 	vector<string> 	 l2c_prefetcher_types;
 	vector<string> 	 l1d_prefetcher_types;
 	bool     l1d_perfect = false;
 	bool     l2c_perfect = false;
 	bool     llc_perfect = false;
+	bool     pfb_perfect = false;
+	bool     cxl_perfect = false;
 	bool     l1d_semi_perfect = false;
 	bool     l2c_semi_perfect = false;
 	bool     llc_semi_perfect = false;
+	bool     pfb_semi_perfect = false;
+	bool     cxl_semi_perfect = false;
+
 	uint32_t semi_perfect_cache_page_buffer_size = 64;
 	bool     measure_ipc = false;
 	uint64_t measure_ipc_epoch = 1000;
@@ -124,6 +129,7 @@ namespace knob
 	float 	mlop_l1d_thresh;
 	float 	mlop_l2c_thresh;
 	float 	mlop_llc_thresh;
+	float   mlop_pfb_thresh;
 	uint32_t	mlop_debug_level;
 
 	/* Bingo */
@@ -384,10 +390,10 @@ int parse_knobs(void* user, const char* section, const char* name, const char* v
     {
 		knob::measure_ipc_epoch = atoi(value);
     }
-    else if (MATCH("", "dram_io_freq"))
-    {
-		knob::dram_io_freq = atoi(value);
-    }
+    // else if (MATCH("", "dram_io_freq"))
+    // {
+	// 	knob::dram_io_freq = atoi(value);
+    // }
     else if (MATCH("", "measure_dram_bw"))
     {
 		knob::measure_dram_bw = !strcmp(value, "true") ? true : false;
@@ -719,6 +725,10 @@ int parse_knobs(void* user, const char* section, const char* name, const char* v
 	else if (MATCH("", "mlop_llc_thresh"))
 	{
 		knob::mlop_llc_thresh = atof(value);
+	}
+	else if (MATCH("", "mlop_pfb_thresh"))
+	{
+		knob::mlop_pfb_thresh = atof(value);
 	}
 	else if (MATCH("", "mlop_debug_level"))
 	{

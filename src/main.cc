@@ -46,9 +46,11 @@ namespace knob
     extern bool l1d_perfect;
     extern bool l2c_perfect;
     extern bool llc_perfect;
+    extern bool pfb_perfect;
     extern bool l1d_semi_perfect;
     extern bool l2c_semi_perfect;
     extern bool llc_semi_perfect;
+    extern bool pfb_semi_perfect;
     extern uint32_t semi_perfect_cache_page_buffer_size;
 }
 
@@ -251,12 +253,20 @@ void finish_warmup()
         // reset branch stats
         ooo_cpu[i].num_branch = 0;
         ooo_cpu[i].branch_mispredictions = 0;
-	ooo_cpu[i].total_rob_occupancy_at_branch_mispredict = 0;
+	    ooo_cpu[i].total_rob_occupancy_at_branch_mispredict = 0;
 
         reset_cache_stats(i, &ooo_cpu[i].L1I);
         reset_cache_stats(i, &ooo_cpu[i].L1D);
         reset_cache_stats(i, &ooo_cpu[i].L2C);
         reset_cache_stats(i, &uncore.LLC);
+
+#ifdef WITH_PFB
+        reset_cache_stats(i, &uncore.PFB);
+#endif
+
+#ifdef WITH_CXL
+        reset_cache_stats(i, &uncore.CXL);
+#endif
     }
     cout << endl;
 
@@ -278,6 +288,17 @@ void finish_warmup()
         ooo_cpu[i].L2C.LATENCY  = L2C_LATENCY;
     }
     uncore.LLC.LATENCY = LLC_LATENCY;
+
+#ifdef WITH_PFB
+    uncore.PFB.LATENCY = PFB_LATENCY;
+#endif
+
+#ifdef WITH_CXL
+    uncore.CXL.LATENCY = CXL_LATENCY *  CPU_FREQ / 2000 / 2;
+    uint64_t cxl_bus_return_time = BLOCK_SIZE * (1.0 * CPU_FREQ / CXL_BW);
+    uncore.CXL.BUS_RETURN_TIME = cxl_bus_return_time;
+#endif
+
 }
 
 void print_deadlock(uint32_t i)
@@ -290,6 +311,10 @@ void print_deadlock(uint32_t i)
     cout << " is_memory: " << +ooo_cpu[i].ROB.entry[ooo_cpu[i].ROB.head].is_memory;
     cout << " event: " << ooo_cpu[i].ROB.entry[ooo_cpu[i].ROB.head].event_cycle;
     cout << " current: " << current_core_cycle[i] << endl;
+
+    // print DRAM queue data
+    cout << endl << "DRAM Next Schedule Index : " << uncore.DRAM.RQ[0].next_schedule_index << " Event: "<< dec<< uncore.DRAM.RQ[0].next_schedule_cycle <<endl;
+    cout << endl << "DRAM Next Processing Index : " << uncore.DRAM.RQ[0].next_process_index << " Event: "<< dec<< uncore.DRAM.RQ[0].next_process_cycle <<endl;
 
     // print LQ entry
     cout << endl << "Load Queue Entry" << endl;
@@ -312,6 +337,37 @@ void print_deadlock(uint32_t i)
         cout << " address: " << hex << queue->entry[j].address << " full_addr: " << queue->entry[j].full_addr << dec << " type: " << +queue->entry[j].type;
         cout << " fill_level: " << queue->entry[j].fill_level << " lq_index: " << queue->entry[j].lq_index << " sq_index: " << queue->entry[j].sq_index << endl;
     }
+
+#ifdef WITH_PFB
+    // print PFB RQ
+    cout << endl <<uncore.PFB.RQ.NAME <<endl;
+    for (uint32_t j=0; j<uncore.PFB.RQ.SIZE;j++)
+    {
+        cout << "[PFB RQ] entry: " << j << " instr_id: " << uncore.PFB.RQ.entry[j].instr_id << " address: " << hex << uncore.PFB.RQ.entry[j].address << " rob_index: " << uncore.PFB.RQ.entry[j].rob_index << dec << endl;
+    }
+
+    cout << endl <<uncore.PFB.MSHR.NAME <<endl;
+    // print PFB MSHR
+    for (uint32_t j=0; j<uncore.PFB.MSHR.SIZE;j++)
+    {
+        cout << "[PFB MSHR] entry: " << j << " instr_id: " << uncore.PFB.MSHR.entry[j].instr_id << " address: " << hex << uncore.PFB.MSHR.entry[j].address << " rob_index: " << uncore.PFB.MSHR.entry[j].rob_index << dec << endl;
+    }
+
+    cout << endl <<uncore.PFB.PQ.NAME <<endl;
+    // print PFB MSHR
+    for (uint32_t j=0; j<uncore.PFB.PQ.SIZE;j++)
+    {
+        cout << "[PFB PQ] entry: " << j << " instr_id: " << uncore.PFB.PQ.entry[j].instr_id << " address: " << hex << uncore.PFB.PQ.entry[j].address << " rob_index: " << uncore.PFB.PQ.entry[j].rob_index << dec << endl;
+    }
+
+#endif
+    cout << endl <<uncore.DRAM.RQ[0].NAME <<endl;
+    // print PFB MSHR
+    for (uint32_t j=0; j<uncore.DRAM.RQ[0].SIZE;j++)
+    {
+        cout << "[DRAM RQ 0] entry: " << j << " instr_id: " << uncore.DRAM.RQ[0].entry[j].instr_id << " address: " << hex << uncore.DRAM.RQ[0].entry[j].address << " rob_index: " << uncore.DRAM.RQ[0].entry[j].rob_index << dec << " event_cycle:" << uncore.DRAM.RQ[0].entry[j].event_cycle << " scheduled:" << int(uncore.DRAM.RQ[0].entry[j].scheduled) << endl;
+    }
+
 
     assert(0);
 }
@@ -441,6 +497,7 @@ uint64_t va_to_pa(uint32_t cpu, uint64_t instr_id, uint64_t va, uint64_t unique_
                 ooo_cpu[cpu].L1D.invalidate_entry(cl_addr);
                 ooo_cpu[cpu].L2C.invalidate_entry(cl_addr);
                 uncore.LLC.invalidate_entry(cl_addr);
+                // PFB does not need to be invalidated? 
             }
 
             // swap complete
@@ -548,14 +605,16 @@ void print_knobs()
         << "l1d_perfect " << knob::l1d_perfect << endl
         << "l2c_perfect " << knob::l2c_perfect << endl
         << "llc_perfect " << knob::llc_perfect << endl
+        << "pfb_perfect " << knob::pfb_perfect << endl
         << "l1d_semi_perfect " << knob::l1d_semi_perfect << endl
         << "l2c_semi_perfect " << knob::l2c_semi_perfect << endl
         << "llc_semi_perfect " << knob::llc_semi_perfect << endl
+        << "pfb_semi_perfect " << knob::pfb_semi_perfect << endl
         << "semi_perfect_cache_page_buffer_size " << knob::semi_perfect_cache_page_buffer_size << endl
         << endl;
     cout << "num_cpus " << NUM_CPUS << endl
         << "cpu_freq " << CPU_FREQ << endl
-        << "dram_io_freq " << knob::dram_io_freq << endl
+        << "dram_io_freq " << DRAM_IO_FREQ << endl
         << "page_size " << PAGE_SIZE << endl
         << "block_size " << BLOCK_SIZE << endl
         << "max_read_per_cycle " << MAX_READ_PER_CYCLE << endl
@@ -580,6 +639,11 @@ void print_knobs()
         ooo_cpu[0].L2C.l2c_prefetcher_print_config();
     // }
     uncore.LLC.llc_prefetcher_print_config();
+
+#ifdef WITH_PFB
+    uncore.PFB.pfb_prefetcher_print_config();
+#endif
+
     cout << endl;
 }
 
@@ -633,9 +697,9 @@ int main(int argc, char** argv)
     }
 
     if (knob::knob_low_bandwidth)
-        DRAM_MTPS = knob::dram_io_freq/4;
+        DRAM_MTPS = DRAM_IO_FREQ/4;
     else
-        DRAM_MTPS = knob::dram_io_freq;
+        DRAM_MTPS = DRAM_IO_FREQ;
 
     // DRAM access latency
     tRP  = (uint32_t)((1.0 * tRP_DRAM_NANOSECONDS  * CPU_FREQ) / 1000);
@@ -787,10 +851,45 @@ int main(int argc, char** argv)
         uncore.LLC.upper_level_dcache[i] = &ooo_cpu[i].L2C;
         uncore.LLC.lower_level = &uncore.DRAM;
 
+#ifdef WITH_CXL
+        // CXL Channel 
+        uncore.LLC.lower_level = &uncore.CXL;        
+        uncore.CXL.cache_type = IS_CXL;
+        uncore.CXL.fill_level = FILL_CXL;
+        uncore.CXL.MAX_READ = NUM_CPUS;
+        uncore.CXL.upper_level_icache[i] = &uncore.LLC;
+        uncore.CXL.upper_level_dcache[i] = &uncore.LLC;
+#ifdef WITH_PFB
+        uncore.CXL.lower_level = &uncore.PFB;
+#else
+        uncore.CXL.lower_level = &uncore.DRAM;
+#endif
+#endif
+
+#ifdef WITH_PFB
+        // PFB
+        uncore.PFB.cache_type = IS_PFB;
+        uncore.PFB.fill_level = FILL_PFB;
+        uncore.PFB.MAX_READ = NUM_CPUS;
+        uncore.PFB.upper_level_icache[i] = &uncore.CXL;
+        uncore.PFB.upper_level_dcache[i] = &uncore.CXL;
+        uncore.PFB.lower_level = &uncore.DRAM;     
+#endif
+
         // OFF-CHIP DRAM
         uncore.DRAM.fill_level = FILL_DRAM;
+#ifdef WITH_PFB
+        uncore.DRAM.upper_level_icache[i] = &uncore.PFB;
+        uncore.DRAM.upper_level_dcache[i] = &uncore.PFB;
+#else
+ #ifdef WITH_CXL
+        uncore.DRAM.upper_level_icache[i] = &uncore.CXL;
+        uncore.DRAM.upper_level_dcache[i] = &uncore.CXL;
+ #else
         uncore.DRAM.upper_level_icache[i] = &uncore.LLC;
         uncore.DRAM.upper_level_dcache[i] = &uncore.LLC;
+ #endif    
+#endif 
         for (uint32_t i=0; i<DRAM_CHANNELS; i++) {
             uncore.DRAM.RQ[i].is_RQ = 1;
             uncore.DRAM.WQ[i].is_WQ = 1;
@@ -813,6 +912,11 @@ int main(int argc, char** argv)
 
     uncore.LLC.llc_initialize_replacement();
     uncore.LLC.llc_prefetcher_initialize();
+
+#ifdef WITH_PFB
+    uncore.PFB.pfb_prefetcher_initialize();
+    uncore.PFB.pfb_initialize_replacement();
+#endif
 
     print_knobs();
 
@@ -950,7 +1054,13 @@ int main(int argc, char** argv)
                 record_roi_stats(i, &ooo_cpu[i].L1I);
                 record_roi_stats(i, &ooo_cpu[i].L2C);
                 record_roi_stats(i, &uncore.LLC);
+#ifdef WITH_PFB
+                record_roi_stats(i, &uncore.PFB);
+#endif
 
+#ifdef WITH_CXL
+                record_roi_stats(i, &uncore.CXL);
+#endif
                 all_simulation_complete++;
             }
 
@@ -976,9 +1086,20 @@ int main(int argc, char** argv)
             uncore.DRAM.total_bw_epochs++;
             uncore.DRAM.bw_level_hist[uncore.DRAM.bw]++;
             uncore.LLC.broadcast_bw(uncore.DRAM.bw);
+#ifdef WITH_PFB
+            uncore.PFB.broadcast_bw(uncore.DRAM.bw);
+#endif
         }
 
         uncore.LLC.operate();
+
+#ifdef WITH_CXL
+        uncore.CXL.operate();
+#endif
+
+#ifdef WITH_PFB  
+        uncore.PFB.operate();
+#endif        
         uncore.DRAM.operate();
     }
 
@@ -1020,6 +1141,15 @@ int main(int argc, char** argv)
         print_roi_stats(i, &ooo_cpu[i].L2C);
 #endif
         print_roi_stats(i, &uncore.LLC);
+
+#ifdef WITH_PFB
+        print_roi_stats(i, &uncore.PFB);
+#endif 
+
+#ifdef WITH_CXL
+        print_roi_stats(i, &uncore.CXL);
+#endif
+
         cout << "Core_" << i << "_major_page_fault " << major_fault[i] << endl
             << "Core_" << i << "_minor_page_fault " << minor_fault[i] << endl
             << endl;
@@ -1032,8 +1162,16 @@ int main(int argc, char** argv)
 
     uncore.LLC.llc_prefetcher_final_stats();
 
+#ifdef WITH_PFB
+    uncore.PFB.pfb_prefetcher_final_stats();
+#endif
+
 #ifndef CRC2_COMPILE
     uncore.LLC.llc_replacement_final_stats();
+
+#ifdef WITH_PFB
+    uncore.PFB.pfb_replacement_final_stats();
+#endif
     print_dram_stats();
 #endif
 

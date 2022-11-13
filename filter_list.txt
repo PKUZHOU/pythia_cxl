@@ -1,0 +1,11 @@
+mcf_s-472B
+xalancbmk-127B
+GemsFDTD-1211B
+mcf_s-665B
+astar-359B
+mcf-51B
+sphinx3-417B
+milc-337B
+soplex-92B
+mcf-192B
+milc-127B

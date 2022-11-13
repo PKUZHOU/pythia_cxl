@@ -1,9 +1,9 @@
 #!/bin/bash
 
-if [ "$#" -ne 4 ]; then
+if [ "$#" -ne 5 ]; then
     echo "Illegal number of parameters"
     #echo "Usage: ./build_champsim.sh [branch_pred] [l1d_pref] [l2c_pref] [llc_pref] [llc_repl] [num_core]"
-    echo "Usage: ./build_champsim.sh [l1d_pref] [l2c_pref] [llc_pref] [num_core]"
+    echo "Usage: ./build_champsim.sh [l1d_pref] [l2c_pref] [llc_pref] [pfb_pref] [num_core]"
     exit 1
 fi
 
@@ -12,8 +12,9 @@ fi
 L1D_PREFETCHER=$1   # prefetcher/*.l1d_pref
 L2C_PREFETCHER=$2   # prefetcher/*.l2c_pref
 LLC_PREFETCHER=$3   # prefetcher/*.llc_pref
+PFB_PREFETCHER=$4   # prefetcer/*.pfb_pref
 #LLC_REPLACEMENT=$5  # replacement/*.llc_repl
-NUM_CORE=$4         # tested up to 8-core system
+NUM_CORE=$5         # tested up to 8-core system
 
 ############## Some useful macros ###############
 BOLD=$(tput bold)
@@ -23,6 +24,7 @@ NORMAL=$(tput sgr0)
 ############## Default configuration ############
 BRANCH=perceptron
 LLC_REPLACEMENT=ship
+PFB_REPLACEMENT=lru
 #NUM_CORE=1
 #################################################
 
@@ -62,6 +64,20 @@ if [ ! -f ./replacement/${LLC_REPLACEMENT}.llc_repl ]; then
     exit 1
 fi
 
+if [ ! -f ./prefetcher/${PFB_PREFETCHER}.pfb_pref ]; then
+    echo "[ERROR] Cannot find PFB prefetcher"
+	echo "[ERROR] Possible PFB prefetchers from prefetcher/*.pfb_pref "
+    find prefetcher -name "*.pfb_pref"
+    exit 1
+fi
+
+if [ ! -f ./replacement/${PFB_REPLACEMENT}.pfb_repl ]; then
+    echo "[ERROR] Cannot find PFB replacement policy"
+	echo "[ERROR] Possible PFB replacement policy from replacement/*.pfb_repl"
+    find replacement -name "*.pfb_repl"
+    exit 1
+fi
+
 # Check num_core
 re='^[0-9]+$'
 if ! [[ $NUM_CORE =~ $re ]] ; then
@@ -72,11 +88,11 @@ fi
 # Check for multi-core
 if [ "$NUM_CORE" -gt "1" ]; then
     echo "Building multi-core ChampSim..."
-    sed -i.bak 's/\<NUM_CPUS 1\>/NUM_CPUS '${NUM_CORE}'/g' inc/champsim.h
-    if [ "$NUM_CORE" -gt "2" ]; then
-    	sed -i.bak 's/\<DRAM_CHANNELS 1\>/DRAM_CHANNELS 2/g' inc/champsim.h
-    	sed -i.bak 's/\<LOG2_DRAM_CHANNELS 0\>/LOG2_DRAM_CHANNELS 1/g' inc/champsim.h
-    fi
+    # sed -i.bak 's/\<NUM_CPUS 1\>/NUM_CPUS '${NUM_CORE}'/g' inc/champsim.h
+    # if [ "$NUM_CORE" -gt "2" ]; then
+    	# sed -i.bak 's/\<DRAM_CHANNELS 1\>/DRAM_CHANNELS 2/g' inc/champsim.h
+    	# sed -i.bak 's/\<LOG2_DRAM_CHANNELS 0\>/LOG2_DRAM_CHANNELS 1/g' inc/champsim.h
+    # fi
 else
     if [ "$NUM_CORE" -lt "1" ]; then
         echo "Number of core: $NUM_CORE must be greater or equal than 1"
@@ -94,11 +110,15 @@ cp prefetcher/${L2C_PREFETCHER}.l2c_pref prefetcher/l2c_prefetcher.cc
 cp prefetcher/${LLC_PREFETCHER}.llc_pref prefetcher/llc_prefetcher.cc
 cp replacement/${LLC_REPLACEMENT}.llc_repl replacement/llc_replacement.cc
 
+cp prefetcher/${PFB_PREFETCHER}.pfb_pref prefetcher/pfb_prefetcher.cc
+cp replacement/${PFB_REPLACEMENT}.pfb_repl replacement/pfb_replacement.cc
+
+
 # Build
 mkdir -p bin
 rm -f bin/champsim
 make clean
-make
+make -j
 
 # Sanity check
 echo ""
@@ -114,20 +134,26 @@ echo "L1D Prefetcher: ${L1D_PREFETCHER}"
 echo "L2C Prefetcher: ${L2C_PREFETCHER}"
 echo "LLC Prefetcher: ${LLC_PREFETCHER}"
 echo "LLC Replacement: ${LLC_REPLACEMENT}"
+echo "PFB Prefetcher: ${PFB_PREFETCHER}"
+echo "PFB Replacement: ${PFB_REPLACEMENT}"
 echo "Cores: ${NUM_CORE}"
-BINARY_NAME="${BRANCH}-${L1D_PREFETCHER}-${L2C_PREFETCHER}-${LLC_PREFETCHER}-${LLC_REPLACEMENT}-${NUM_CORE}core"
+BINARY_NAME="${BRANCH}-${L1D_PREFETCHER}-${L2C_PREFETCHER}-${LLC_PREFETCHER}-${LLC_REPLACEMENT}-${PFB_PREFETCHER}-${PFB_REPLACEMENT}-${NUM_CORE}core"
 echo "Binary: bin/${BINARY_NAME}"
 echo ""
-mv bin/champsim bin/${BINARY_NAME}
+# mv bin/champsim bin/${BINARY_NAME}
 
 
 # Restore to the default configuration
-sed -i.bak 's/\<NUM_CPUS '${NUM_CORE}'\>/NUM_CPUS 1/g' inc/champsim.h
-sed -i.bak 's/\<DRAM_CHANNELS 2\>/DRAM_CHANNELS 1/g' inc/champsim.h
-sed -i.bak 's/\<LOG2_DRAM_CHANNELS 1\>/LOG2_DRAM_CHANNELS 0/g' inc/champsim.h
+# sed -i.bak 's/\<NUM_CPUS '${NUM_CORE}'\>/NUM_CPUS 1/g' inc/champsim.h
+# sed -i.bak 's/\<DRAM_CHANNELS 2\>/DRAM_CHANNELS 1/g' inc/champsim.h
+# sed -i.bak 's/\<LOG2_DRAM_CHANNELS 1\>/LOG2_DRAM_CHANNELS 0/g' inc/champsim.h
 
 cp branch/bimodal.bpred branch/branch_predictor.cc
 cp prefetcher/no.l1d_pref prefetcher/l1d_prefetcher.cc
 cp prefetcher/no.l2c_pref prefetcher/l2c_prefetcher.cc
 cp prefetcher/no.llc_pref prefetcher/llc_prefetcher.cc
+cp prefetcher/no.pfb_pref prefetcher/pfb_prefetcher.cc
+
 cp replacement/lru.llc_repl replacement/llc_replacement.cc
+cp replacement/lru.pfb_repl replacement/pfb_replacement.cc
+

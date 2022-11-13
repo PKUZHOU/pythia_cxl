@@ -69,7 +69,9 @@ class PACKET {
             translated,
             fetched,
             prefetched,
-            drc_tag_read;
+            drc_tag_read,
+            issued_to_dram,
+            active_pref;
 
     int fill_level, 
         pf_origin_level,
@@ -119,7 +121,7 @@ class PACKET {
         fetched = 0;
         prefetched = 0;
         drc_tag_read = 0;
-
+        issued_to_dram = 0;
         returned = 0;
         asid[0] = UINT8_MAX;
         asid[1] = UINT8_MAX;
@@ -133,6 +135,7 @@ class PACKET {
         depth = 0;
         signature = 0;
         confidence = 0;
+        active_pref = 0;
 
 #if 0
         for (uint32_t i=0; i<ROB_SIZE; i++) {
@@ -260,7 +263,8 @@ class PACKET_QUEUE {
     // functions
     int check_queue(PACKET* packet);
     void add_queue(PACKET* packet),
-         remove_queue(PACKET* packet);
+         remove_queue(PACKET* packet),
+         delete_packet(PACKET *packet);
 };
 
 // reorder buffer

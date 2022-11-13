@@ -9,6 +9,7 @@ namespace knob
 	extern float 	mlop_l1d_thresh;
 	extern float 	mlop_l2c_thresh;
 	extern float 	mlop_llc_thresh;
+	extern float    mlop_pfb_thresh;
 	extern uint32_t	mlop_debug_level;
 }
 
@@ -33,6 +34,7 @@ void MLOP::init_knobs()
 	L1D_THRESH = knob::mlop_l1d_thresh * NUM_UPDATES;
 	L2C_THRESH = knob::mlop_l2c_thresh * NUM_UPDATES;
 	LLC_THRESH = knob::mlop_llc_thresh * NUM_UPDATES;
+	PFB_THRESH = knob::mlop_pfb_thresh * NUM_UPDATES;
 	debug_level = knob::mlop_debug_level;
 
 	blocks_in_cache = parent->NUM_SET * parent->NUM_WAY;
@@ -73,6 +75,7 @@ void MLOP::print_config()
 		<< "mlop_l1d_thresh " << knob::mlop_l1d_thresh << endl
 		<< "mlop_l2c_thresh " << knob::mlop_l2c_thresh << endl
 		<< "mlop_llc_thresh " << knob::mlop_llc_thresh << endl
+		<< "mlop_pfb_thresh " << knob::mlop_pfb_thresh << endl
 		<< "mlop_debug_level " << knob::mlop_debug_level << endl
 		<< "mlop_blocks_in_cache " << blocks_in_cache << endl
 		<< "mlop_blocks_in_zone " << blocks_in_zone << endl
@@ -82,6 +85,7 @@ void MLOP::print_config()
 		<< "mlop_L1D_THRESH " << L1D_THRESH << endl
 		<< "mlop_L2C_THRESH " << L2C_THRESH << endl
 		<< "mlop_LLC_THRESH " << LLC_THRESH << endl
+		<< "mlop_PFB_THRESH " << PFB_THRESH << endl
 		<< "mlop_ORIGIN " << ORIGIN << endl
 		<< "mlop_MAX_OFFSET " << MAX_OFFSET << endl
 		<< "mlop_MIN_OFFSET " << MIN_OFFSET << endl
@@ -177,6 +181,8 @@ void MLOP::access(uint64_t block_number) {
 				fill_level = FILL_L2;
 			else if (max_scores[d] >= (int)LLC_THRESH)
 				fill_level = FILL_LLC;
+			else if (max_scores[d] >= (int) PFB_THRESH)
+				fill_level = FILL_PFB;
 			else
 				continue;
 
@@ -214,6 +220,8 @@ void MLOP::access(uint64_t block_number) {
 					cout << "L2";
 				if (this->pf_level[d] == FILL_LLC)
 					cout << "L3";
+				if (this->pf_level[d] == FILL_PFB)
+					cout << "PFB";
 
 				cout << ", Offsets: ";
 				if (this->pf_offset[d].size() == 0)

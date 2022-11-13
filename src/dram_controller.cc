@@ -25,7 +25,6 @@ void MEMORY_CONTROLLER::reset_remain_requests(PACKET_QUEUE *queue, uint32_t chan
 {
     for (uint32_t i=0; i<queue->SIZE; i++) {
         if (queue->entry[i].scheduled) {
-
             uint64_t op_addr = queue->entry[i].address;
             uint32_t op_cpu = queue->entry[i].cpu,
                      op_channel = dram_get_channel(op_addr), 
@@ -58,6 +57,10 @@ void MEMORY_CONTROLLER::reset_remain_requests(PACKET_QUEUE *queue, uint32_t chan
             }
 
             queue->entry[i].scheduled = 0;
+                        
+#ifdef CXL_DEBUG
+            cout<< "Rescheduled: "<<hex<<queue->entry[i].address <<dec<< endl;
+#endif 
             queue->entry[i].event_cycle = current_core_cycle[op_cpu];
 
             DP ( if (warmup_complete[op_cpu]) {
@@ -164,12 +167,6 @@ void MEMORY_CONTROLLER::schedule(PACKET_QUEUE *queue)
 
         // bank is busy
         if (bank_request[read_channel][read_rank][read_bank].working) { // should we check this or not? how do we know if bank is busy or not for all requests in the queue?
-
-            //DP ( if (warmup_complete[0]) {
-            //cout << queue->NAME << " " << __func__ << " instr_id: " << queue->entry[i].instr_id << " bank is busy";
-            //cout << " swrites: " << scheduled_writes[channel] << " sreads: " << scheduled_reads[channel];
-            //cout << " write: " << +bank_request[read_channel][read_rank][read_bank].is_write << " read: " << +bank_request[read_channel][read_rank][read_bank].is_read << hex;
-            //cout << " address: " << queue->entry[i].address << dec << " channel: " << read_channel << " rank: " << read_rank << " bank: " << read_bank << endl; });
 
             continue;
         }
@@ -288,6 +285,17 @@ void MEMORY_CONTROLLER::schedule(PACKET_QUEUE *queue)
     }
 }
 
+void MEMORY_CONTROLLER::remove_rq(uint32_t channel, PACKET *packet)
+{
+    int dram_rq_index = check_dram_queue(&RQ[channel], packet);
+    if(RQ[channel].entry[dram_rq_index].scheduled) return; // already running
+
+    RQ[channel].remove_queue(&RQ[channel].entry[dram_rq_index]);
+
+    rq_enqueue_count--;
+    update_schedule_cycle(&RQ[channel]);
+}
+
 void MEMORY_CONTROLLER::process(PACKET_QUEUE *queue)
 {
     uint32_t request_index = queue->next_process_index;
@@ -348,6 +356,9 @@ void MEMORY_CONTROLLER::process(PACKET_QUEUE *queue)
                 cout << " current_cycle: " << current_core_cycle[op_cpu] << " event_cycle: " << queue->entry[request_index].event_cycle << endl; });
 
                 // send data back to the core cache hierarchy
+#ifdef CXL_DEBUG                            
+                std::cout<<"DRAM return: "<< hex << queue->entry[request_index].address <<dec<<"|" << current_core_cycle[op_cpu] <<std::endl;
+#endif                
                 upper_level_dcache[op_cpu]->return_data(&queue->entry[request_index]);
 
                 if (bank_request[op_channel][op_rank][op_bank].row_buffer_hit)
@@ -438,7 +449,6 @@ int MEMORY_CONTROLLER::add_rq(PACKET *packet)
             upper_level_icache[packet->cpu]->return_data(packet);
         else // data
             upper_level_dcache[packet->cpu]->return_data(packet);
-
         return -1;
     }
 

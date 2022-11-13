@@ -930,177 +930,177 @@ bool Scooby::is_high_bw()
 
 void Scooby::dump_stats()
 {
-	cout << "scooby_st_lookup " << stats.st.lookup << endl
-		<< "scooby_st_hit " << stats.st.hit << endl
-		<< "scooby_st_evict " << stats.st.evict << endl
-		<< "scooby_st_insert " << stats.st.insert << endl
-		<< "scooby_st_streaming " << stats.st.streaming << endl
-		<< endl
+	// cout << "scooby_st_lookup " << stats.st.lookup << endl
+	// 	<< "scooby_st_hit " << stats.st.hit << endl
+	// 	<< "scooby_st_evict " << stats.st.evict << endl
+	// 	<< "scooby_st_insert " << stats.st.insert << endl
+	// 	<< "scooby_st_streaming " << stats.st.streaming << endl
+	// 	<< endl
 
-		<< "scooby_predict_called " << stats.predict.called << endl
-		// << "scooby_predict_shaggy_called " << stats.predict.shaggy_called << endl
-		<< "scooby_predict_out_of_bounds " << stats.predict.out_of_bounds << endl;
+	// 	<< "scooby_predict_called " << stats.predict.called << endl
+	// 	// << "scooby_predict_shaggy_called " << stats.predict.shaggy_called << endl
+	// 	<< "scooby_predict_out_of_bounds " << stats.predict.out_of_bounds << endl;
 
-	for(uint32_t index = 0; index < Actions.size(); ++index)
-	{
-		cout << "scooby_predict_action_" << Actions[index] << " " << stats.predict.action_dist[index] << endl;
-		cout << "scooby_predict_issue_action_" << Actions[index] << " " << stats.predict.issue_dist[index] << endl;
-		cout << "scooby_predict_hit_action_" << Actions[index] << " " << stats.predict.pred_hit[index] << endl;
-		cout << "scooby_predict_out_of_bounds_action_" << Actions[index] << " " << stats.predict.out_of_bounds_dist[index] << endl;
-	}
+	// for(uint32_t index = 0; index < Actions.size(); ++index)
+	// {
+	// 	cout << "scooby_predict_action_" << Actions[index] << " " << stats.predict.action_dist[index] << endl;
+	// 	cout << "scooby_predict_issue_action_" << Actions[index] << " " << stats.predict.issue_dist[index] << endl;
+	// 	cout << "scooby_predict_hit_action_" << Actions[index] << " " << stats.predict.pred_hit[index] << endl;
+	// 	cout << "scooby_predict_out_of_bounds_action_" << Actions[index] << " " << stats.predict.out_of_bounds_dist[index] << endl;
+	// }
 
-	cout << "scooby_predict_multi_deg_called " << stats.predict.multi_deg_called << endl
-		<< "scooby_predict_predicted " << stats.predict.predicted << endl
-		<< "scooby_predict_multi_deg " << stats.predict.multi_deg << endl;
-	for(uint32_t index = 2; index <= MAX_SCOOBY_DEGREE; ++index)
-	{
-		cout << "scooby_predict_multi_deg_" << index << " " << stats.predict.multi_deg_histogram[index] << endl;
-	}
-	cout << endl;
-	for(uint32_t index = 1; index <= MAX_SCOOBY_DEGREE; ++index)
-	{
-		cout << "scooby_selected_deg_" << index << " " << stats.predict.deg_histogram[index] << endl;
-	}
-	cout << endl;
+	// cout << "scooby_predict_multi_deg_called " << stats.predict.multi_deg_called << endl
+	// 	<< "scooby_predict_predicted " << stats.predict.predicted << endl
+	// 	<< "scooby_predict_multi_deg " << stats.predict.multi_deg << endl;
+	// for(uint32_t index = 2; index <= MAX_SCOOBY_DEGREE; ++index)
+	// {
+	// 	cout << "scooby_predict_multi_deg_" << index << " " << stats.predict.multi_deg_histogram[index] << endl;
+	// }
+	// cout << endl;
+	// for(uint32_t index = 1; index <= MAX_SCOOBY_DEGREE; ++index)
+	// {
+	// 	cout << "scooby_selected_deg_" << index << " " << stats.predict.deg_histogram[index] << endl;
+	// }
+	// cout << endl;
 
-	if(knob::scooby_enable_state_action_stats)
-	{
-		if(knob::scooby_enable_featurewise_engine)
-		{
-			std::vector<std::pair<string, vector<uint64_t> > > pairs;
-			for (auto itr = state_action_dist2.begin(); itr != state_action_dist2.end(); ++itr)
-			    pairs.push_back(*itr);
-			sort(pairs.begin(), pairs.end(), [](std::pair<string, vector<uint64_t>>& a, std::pair<string, vector<uint64_t>>& b){return a.second[knob::scooby_max_actions] > b.second[knob::scooby_max_actions];});
-			for(auto it = pairs.begin(); it != pairs.end(); ++it)
-			{
-				cout << "scooby_state_" << hex << it->first << dec << " ";
-				for(uint32_t index = 0; index < it->second.size(); ++index)
-				{
-					cout << it->second[index] << ",";
-				}
-				cout << endl;
-			}
-		}
-		else
-		{
-			for(auto it = state_action_dist.begin(); it != state_action_dist.end(); ++it)
-			{
-				cout << "scooby_state_" << hex << it->first << dec << " ";
-				for(uint32_t index = 0; index < it->second.size(); ++index)
-				{
-					cout << it->second[index] << ",";
-				}
-				cout << endl;
-			}
-		}
-	}
-	cout << endl;
+	// if(knob::scooby_enable_state_action_stats)
+	// {
+	// 	if(knob::scooby_enable_featurewise_engine)
+	// 	{
+	// 		std::vector<std::pair<string, vector<uint64_t> > > pairs;
+	// 		for (auto itr = state_action_dist2.begin(); itr != state_action_dist2.end(); ++itr)
+	// 		    pairs.push_back(*itr);
+	// 		sort(pairs.begin(), pairs.end(), [](std::pair<string, vector<uint64_t>>& a, std::pair<string, vector<uint64_t>>& b){return a.second[knob::scooby_max_actions] > b.second[knob::scooby_max_actions];});
+	// 		for(auto it = pairs.begin(); it != pairs.end(); ++it)
+	// 		{
+	// 			cout << "scooby_state_" << hex << it->first << dec << " ";
+	// 			for(uint32_t index = 0; index < it->second.size(); ++index)
+	// 			{
+	// 				cout << it->second[index] << ",";
+	// 			}
+	// 			cout << endl;
+	// 		}
+	// 	}
+	// 	else
+	// 	{
+	// 		for(auto it = state_action_dist.begin(); it != state_action_dist.end(); ++it)
+	// 		{
+	// 			cout << "scooby_state_" << hex << it->first << dec << " ";
+	// 			for(uint32_t index = 0; index < it->second.size(); ++index)
+	// 			{
+	// 				cout << it->second[index] << ",";
+	// 			}
+	// 			cout << endl;
+	// 		}
+	// 	}
+	// }
+	// cout << endl;
 
-	for(auto it = action_deg_dist.begin(); it != action_deg_dist.end(); ++it)
-	{
-		cout << "scooby_action_" << it->first << "_deg_dist ";
-		for(uint32_t index = 0; index < MAX_SCOOBY_DEGREE; ++index)
-		{
-			cout << it->second[index] << ",";
-		}
-		cout << endl;
-	}
-	cout << endl;
+	// for(auto it = action_deg_dist.begin(); it != action_deg_dist.end(); ++it)
+	// {
+	// 	cout << "scooby_action_" << it->first << "_deg_dist ";
+	// 	for(uint32_t index = 0; index < MAX_SCOOBY_DEGREE; ++index)
+	// 	{
+	// 		cout << it->second[index] << ",";
+	// 	}
+	// 	cout << endl;
+	// }
+	// cout << endl;
 
-	cout << "scooby_track_called " << stats.track.called << endl
-		<< "scooby_track_same_address " << stats.track.same_address << endl
-		<< "scooby_track_evict " << stats.track.evict << endl
-		<< endl
+	// cout << "scooby_track_called " << stats.track.called << endl
+	// 	<< "scooby_track_same_address " << stats.track.same_address << endl
+	// 	<< "scooby_track_evict " << stats.track.evict << endl
+	// 	<< endl
 
-		<< "scooby_reward_demand_called " << stats.reward.demand.called << endl
-		<< "scooby_reward_demand_pt_not_found " << stats.reward.demand.pt_not_found << endl
-		<< "scooby_reward_demand_pt_found " << stats.reward.demand.pt_found << endl
-		<< "scooby_reward_demand_pt_found_total " << stats.reward.demand.pt_found_total << endl
-		<< "scooby_reward_demand_has_reward " << stats.reward.demand.has_reward << endl
-		<< "scooby_reward_train_called " << stats.reward.train.called << endl
-		<< "scooby_reward_assign_reward_called " << stats.reward.assign_reward.called << endl
-		<< "scooby_reward_no_pref " << stats.reward.no_pref << endl
-		<< "scooby_reward_incorrect " << stats.reward.incorrect << endl
-		<< "scooby_reward_correct_untimely " << stats.reward.correct_untimely << endl
-		<< "scooby_reward_correct_timely " << stats.reward.correct_timely << endl
-		<< "scooby_reward_out_of_bounds " << stats.reward.out_of_bounds << endl
-		<< "scooby_reward_tracker_hit " << stats.reward.tracker_hit << endl
-		<< endl;
+	// 	<< "scooby_reward_demand_called " << stats.reward.demand.called << endl
+	// 	<< "scooby_reward_demand_pt_not_found " << stats.reward.demand.pt_not_found << endl
+	// 	<< "scooby_reward_demand_pt_found " << stats.reward.demand.pt_found << endl
+	// 	<< "scooby_reward_demand_pt_found_total " << stats.reward.demand.pt_found_total << endl
+	// 	<< "scooby_reward_demand_has_reward " << stats.reward.demand.has_reward << endl
+	// 	<< "scooby_reward_train_called " << stats.reward.train.called << endl
+	// 	<< "scooby_reward_assign_reward_called " << stats.reward.assign_reward.called << endl
+	// 	<< "scooby_reward_no_pref " << stats.reward.no_pref << endl
+	// 	<< "scooby_reward_incorrect " << stats.reward.incorrect << endl
+	// 	<< "scooby_reward_correct_untimely " << stats.reward.correct_untimely << endl
+	// 	<< "scooby_reward_correct_timely " << stats.reward.correct_timely << endl
+	// 	<< "scooby_reward_out_of_bounds " << stats.reward.out_of_bounds << endl
+	// 	<< "scooby_reward_tracker_hit " << stats.reward.tracker_hit << endl
+	// 	<< endl;
 
-	for(uint32_t reward = 0; reward < RewardType::num_rewards; ++reward)
-	{
-		cout << "scooby_reward_" << getRewardTypeString((RewardType)reward) << "_low_bw " << stats.reward.compute_reward.dist[reward][0] << endl
-			<< "scooby_reward_" << getRewardTypeString((RewardType)reward) << "_high_bw " << stats.reward.compute_reward.dist[reward][1] << endl;
-	}
-	cout << endl;
+	// for(uint32_t reward = 0; reward < RewardType::num_rewards; ++reward)
+	// {
+	// 	cout << "scooby_reward_" << getRewardTypeString((RewardType)reward) << "_low_bw " << stats.reward.compute_reward.dist[reward][0] << endl
+	// 		<< "scooby_reward_" << getRewardTypeString((RewardType)reward) << "_high_bw " << stats.reward.compute_reward.dist[reward][1] << endl;
+	// }
+	// cout << endl;
 
-	for(uint32_t action = 0; action < Actions.size(); ++action)
-	{
-		cout << "scooby_reward_" << Actions[action] << " ";
-		for(uint32_t reward = 0; reward < RewardType::num_rewards; ++reward)
-		{
-			cout << stats.reward.dist[action][reward] << ",";
-		}
-		cout << endl;
-	}
+	// for(uint32_t action = 0; action < Actions.size(); ++action)
+	// {
+	// 	cout << "scooby_reward_" << Actions[action] << " ";
+	// 	for(uint32_t reward = 0; reward < RewardType::num_rewards; ++reward)
+	// 	{
+	// 		cout << stats.reward.dist[action][reward] << ",";
+	// 	}
+	// 	cout << endl;
+	// }
 
 
-	cout << endl
-		<< "scooby_train_called " << stats.train.called << endl
-		<< "scooby_train_compute_reward " << stats.train.compute_reward << endl
-		<< endl
+	// cout << endl
+	// 	<< "scooby_train_called " << stats.train.called << endl
+	// 	<< "scooby_train_compute_reward " << stats.train.compute_reward << endl
+	// 	<< endl
 
-		<< "scooby_register_fill_called " << stats.register_fill.called << endl
-		<< "scooby_register_fill_set " << stats.register_fill.set << endl
-		<< "scooby_register_fill_set_total " << stats.register_fill.set_total << endl
-		<< endl
+	// 	<< "scooby_register_fill_called " << stats.register_fill.called << endl
+	// 	<< "scooby_register_fill_set " << stats.register_fill.set << endl
+	// 	<< "scooby_register_fill_set_total " << stats.register_fill.set_total << endl
+	// 	<< endl
 
-		<< "scooby_register_prefetch_hit_called " << stats.register_prefetch_hit.called << endl
-		<< "scooby_register_prefetch_hit_set " << stats.register_prefetch_hit.set << endl
-		<< "scooby_register_prefetch_hit_set_total " << stats.register_prefetch_hit.set_total << endl
-		<< endl
+	// 	<< "scooby_register_prefetch_hit_called " << stats.register_prefetch_hit.called << endl
+	// 	<< "scooby_register_prefetch_hit_set " << stats.register_prefetch_hit.set << endl
+	// 	<< "scooby_register_prefetch_hit_set_total " << stats.register_prefetch_hit.set_total << endl
+	// 	<< endl
 
-		<< "scooby_pref_issue_scooby " << stats.pref_issue.scooby << endl
-		// << "scooby_pref_issue_shaggy " << stats.pref_issue.shaggy << endl
-		<< endl;
+	// 	<< "scooby_pref_issue_scooby " << stats.pref_issue.scooby << endl
+	// 	// << "scooby_pref_issue_shaggy " << stats.pref_issue.shaggy << endl
+	// 	<< endl;
 
-	std::vector<std::pair<string, uint64_t>> pairs;
-	for (auto itr = target_action_state.begin(); itr != target_action_state.end(); ++itr)
-	    pairs.push_back(*itr);
-	sort(pairs.begin(), pairs.end(), [](std::pair<string, uint64_t>& a, std::pair<string, uint64_t>& b){return a.second > b.second;});
-	for(auto it = pairs.begin(); it != pairs.end(); ++it)
-	{
-		cout << it->first << "," << it->second << endl;
-	}
+	// std::vector<std::pair<string, uint64_t>> pairs;
+	// for (auto itr = target_action_state.begin(); itr != target_action_state.end(); ++itr)
+	//     pairs.push_back(*itr);
+	// sort(pairs.begin(), pairs.end(), [](std::pair<string, uint64_t>& a, std::pair<string, uint64_t>& b){return a.second > b.second;});
+	// for(auto it = pairs.begin(); it != pairs.end(); ++it)
+	// {
+	// 	cout << it->first << "," << it->second << endl;
+	// }
 
-	if(brain_featurewise)
-	{
-		brain_featurewise->dump_stats();
-	}
-	if(brain)
-	{
-		brain->dump_stats();
-	}
-	recorder->dump_stats();
+	// if(brain_featurewise)
+	// {
+	// 	brain_featurewise->dump_stats();
+	// }
+	// if(brain)
+	// {
+	// 	brain->dump_stats();
+	// }
+	// recorder->dump_stats();
 
-	cout << "scooby_bw_epochs " << stats.bandwidth.epochs << endl;
-	for(uint32_t index = 0; index < DRAM_BW_LEVELS; ++index)
-	{
-		cout << "scooby_bw_level_" << index << " " << stats.bandwidth.histogram[index] << endl;
-	}
-	cout << endl;
+	// cout << "scooby_bw_epochs " << stats.bandwidth.epochs << endl;
+	// for(uint32_t index = 0; index < DRAM_BW_LEVELS; ++index)
+	// {
+	// 	cout << "scooby_bw_level_" << index << " " << stats.bandwidth.histogram[index] << endl;
+	// }
+	// cout << endl;
 
-	cout << "scooby_ipc_epochs " << stats.ipc.epochs << endl;
-	for(uint32_t index = 0; index < SCOOBY_MAX_IPC_LEVEL; ++index)
-	{
-		cout << "scooby_ipc_level_" << index << " " << stats.ipc.histogram[index] << endl;
-	}
-	cout << endl;
+	// cout << "scooby_ipc_epochs " << stats.ipc.epochs << endl;
+	// for(uint32_t index = 0; index < SCOOBY_MAX_IPC_LEVEL; ++index)
+	// {
+	// 	cout << "scooby_ipc_level_" << index << " " << stats.ipc.histogram[index] << endl;
+	// }
+	// cout << endl;
 
-	cout << "scooby_cache_acc_epochs " << stats.cache_acc.epochs << endl;
-	for(uint32_t index = 0; index < CACHE_ACC_LEVELS; ++index)
-	{
-		cout << "scooby_cache_acc_level_" << index << " " << stats.cache_acc.histogram[index] << endl;
-	}
-	cout << endl;
+	// cout << "scooby_cache_acc_epochs " << stats.cache_acc.epochs << endl;
+	// for(uint32_t index = 0; index < CACHE_ACC_LEVELS; ++index)
+	// {
+	// 	cout << "scooby_cache_acc_level_" << index << " " << stats.cache_acc.histogram[index] << endl;
+	// }
+	// cout << endl;
 }

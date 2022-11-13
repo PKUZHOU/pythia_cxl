@@ -6,11 +6,17 @@
 // DRAM configuration
 #define DRAM_CHANNEL_WIDTH 8 // 8B
 #define DRAM_WQ_SIZE 64
-#define DRAM_RQ_SIZE 64
+// #define DRAM_RQ_SIZE 64
 
-#define tRP_DRAM_NANOSECONDS  15
-#define tRCD_DRAM_NANOSECONDS 15
-#define tCAS_DRAM_NANOSECONDS 12.5
+#define DRAM_RQ_SIZE 128
+
+// #define tRP_DRAM_NANOSECONDS  15
+// #define tRCD_DRAM_NANOSECONDS 15
+// #define tCAS_DRAM_NANOSECONDS 12.5
+
+#define tRP_DRAM_NANOSECONDS  16
+#define tRCD_DRAM_NANOSECONDS 16
+#define tCAS_DRAM_NANOSECONDS 16
 
 // the data bus must wait this amount of time when switching between reads and writes, and vice versa
 #define DRAM_DBUS_TURN_AROUND_TIME ((15*CPU_FREQ)/2000) // 7.5 ns 
@@ -119,6 +125,7 @@ class MEMORY_CONTROLLER : public MEMORY {
     uint64_t get_bank_earliest_cycle();
 
     int check_dram_queue(PACKET_QUEUE *queue, PACKET *packet);
+    void remove_rq(uint32_t channel, PACKET *packet);
 };
 
 #endif

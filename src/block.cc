@@ -115,3 +115,65 @@ void PACKET_QUEUE::remove_queue(PACKET *packet)
     if (head >= SIZE)
         head = 0;
 }
+
+
+void PACKET_QUEUE::delete_packet(PACKET *packet)
+{
+#ifdef SANITY_CHECK
+    if ((occupancy == 0) && (head == tail))
+        assert(0);
+#endif
+
+    int index = check_queue(packet);
+    // cout<<"DEL: "<<hex<<packet->address<<dec <<" Head: "<<head <<" Tail: "<<tail <<endl;
+
+    assert(index != -1);
+    
+    PACKET tmp_entry[SIZE]; 
+    
+    int tmp_head = head;
+    int tmp_tail = tail;
+
+    // for(int i = 0;i<SIZE;i++){
+    //   cout<<i<<" "<<hex<<entry[i].address<<dec<<endl;
+    // }
+    // cout<<endl;
+
+    while(tmp_head != index)
+    {
+      tmp_entry[tmp_head] = entry[tmp_head];
+      tmp_head ++;
+      if(tmp_head == SIZE) tmp_head = 0;
+    }
+
+    while(tmp_tail != index)
+    {
+      if(tmp_tail == 0)
+      {
+        tmp_entry[SIZE] = entry[tmp_tail];
+        tmp_tail = SIZE - 1;
+      }
+      else
+      {
+        tmp_entry[tmp_tail-1] = entry[tmp_tail];
+        tmp_tail --;
+      }
+    }
+    for(int i = 0;i<SIZE;i++){
+      entry[i] = tmp_entry[i];
+    }
+
+    if (tail == 0) tail = SIZE;
+    tail--;
+    
+    // for(int i = 0;i<SIZE;i++){
+    //   cout<<i<<" "<<hex<<entry[i].address<<dec<<endl;
+    // }
+    // cout<<endl;
+
+    // reset entry
+    // PACKET empty_packet;
+    // *packet = empty_packet;
+
+    occupancy--;
+}
