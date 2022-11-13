@@ -22,12 +22,12 @@ def parse_args():
     # Prefetchers
     parser.add_argument('--l1_pref', type=list, default=['multi'])
     parser.add_argument('--l2_pref', type=ast.literal_eval, default=['bop_new','streamer'], nargs='+') 
-    parser.add_argument('--pfb_pref', type=ast.literal_eval, default=['hybrid_active'], nargs='+')
+    parser.add_argument('--pfb_pref', type=ast.literal_eval, default=['no'], nargs='+')
     parser.add_argument('--pf_on_pf', action="store_true", help="enable pfb prefetch on prefetch")
     parser.add_argument('--llc_pref',type=list, default=['no'])
     parser.add_argument('--active_threshold', type=float, default=0.02, help="the active prefetching threshold")
-    parser.add_argument('--active_degree', type=float, default=4, help="the active prefetching degree")
-
+    parser.add_argument('--active_degree', type=int, default=10, help="the active prefetching degree")
+    parser.add_argument('--pfb_degree',type=int, default=10, help="pfb prefetch degree")
     # CXL Channel
     parser.add_argument('--cxl_latency', type=ast.literal_eval, default=[80], help = "nano seconds")
     parser.add_argument('--enable_cxl', action="store_true", help="enable cxl channel")
@@ -132,7 +132,7 @@ def prepare_sim_cmds(args):
             params.append("CXL_BW {}".format(args.cxl_bw))
             params.append("ACTIVE_THRESH {}".format(args.active_threshold))
             params.append("ACTIVE_DEGREE {}".format(args.active_degree))
-
+            params.append("PREFETCH_DEGREE {}".format(args.pfb_degree))
             params.append("DRAM_CHANNELS {}".format(args.mem_channels))
             log2_dram_channels = 0 
             if args.mem_channels == 2: log2_dram_channels = 1
