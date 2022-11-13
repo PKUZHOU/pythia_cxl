@@ -16,8 +16,11 @@ enum Prefetchers {domino_pf, bop_pf, vldp_pf,  spp_pf} PFS;
 #define INSTRUCTION_WINDOW_SIZE 1
 #define PREFETCHER_NUM 4
 
+#ifndef PREFETCH_DEGREE
+#define  PREFETCH_DEGREE 10
+#endif 
+
 /* VLDP settings */
-const int PREFETCH_DEGREE = 10;
 const int DHB_SIZE = 16;
 const int OPT_SIZE = 64;
 const int DPT_SIZE = 64;

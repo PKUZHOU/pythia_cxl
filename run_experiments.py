@@ -26,7 +26,7 @@ def parse_args():
     parser.add_argument('--pf_on_pf', action="store_true", help="enable pfb prefetch on prefetch")
     parser.add_argument('--llc_pref',type=list, default=['no'])
     parser.add_argument('--active_threshold', type=float, default=0.02, help="the active prefetching threshold")
-    parser.add_argument('--active_degree', type=int, default=4, help="the active prefetching degree")
+    parser.add_argument('--active_degree', type=int, default=10, help="the active prefetching degree")
     parser.add_argument('--pfb_degree',type=int, default=10, help="pfb prefetch degree")
     # CXL Channel
     parser.add_argument('--cxl_latency', type=ast.literal_eval, default=[80], help = "nano seconds")
