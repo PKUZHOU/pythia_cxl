@@ -28,6 +28,7 @@ def parse_args():
     parser.add_argument('--active_threshold', type=float, default=0.02, help="the active prefetching threshold")
     parser.add_argument('--active_degree', type=int, default=10, help="the active prefetching degree")
     parser.add_argument('--pfb_degree',type=int, default=10, help="pfb prefetch degree")
+    parser.add_argument('--pref_id',type=int,default=-1,help="Evaluate ensumbled pref")
     # CXL Channel
     parser.add_argument('--cxl_latency', type=ast.literal_eval, default=[80], help = "nano seconds")
     parser.add_argument('--enable_cxl', action="store_true", help="enable cxl channel")
@@ -124,7 +125,8 @@ def prepare_sim_cmds(args):
 
             if (args.pf_on_pf):
                 params.append("PF_ON_PF")
-
+            if (args.pref_id!=-1):
+                params.append("PREF_ID {}".format(args.pref_id))
 
             params.append("CXL_LATENCY {}".format(cxl_latency))
             params.append("PFB_LATENCY {}".format(pfb_latency))
@@ -139,6 +141,7 @@ def prepare_sim_cmds(args):
             if args.mem_channels > 2: log2_dram_channels = 2
             params.append("LOG2_DRAM_CHANNELS {}".format(log2_dram_channels))
             params.append("NUM_CPUS {}".format(args.num_cores))
+        
 
             with open(args.cfg_def_file,"w") as f:
                 for param in params:
