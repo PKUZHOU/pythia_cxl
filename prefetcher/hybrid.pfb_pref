@@ -2233,6 +2233,11 @@ int best_pref_idx;
 void CACHE::pfb_prefetcher_initialize()
 {
   std::cout<<"CONFIDENCE_WINDOW_SIZE "<<CONFIDENCE_WINDOW_SIZE<<std::endl;
+  
+  #ifdef PREF_ID
+    std::cout<<"PREF_ID "<<PREF_ID<<std::endl;
+  #endif
+
   prefetcher_initialize_domino();
   prefetcher_initialize_bo();
   prefetcher_initialize_spp();
@@ -2458,6 +2463,7 @@ uint32_t CACHE::pfb_prefetcher_operate(uint64_t addr, uint64_t ip, uint8_t cache
     }
   }
 
+#ifndef PREF_ID
   uint64_t max_score = 0;
   for(int i = 0;i<PREFETCHER_NUM; i++){
     if(scores[i] > max_score){
@@ -2465,7 +2471,9 @@ uint32_t CACHE::pfb_prefetcher_operate(uint64_t addr, uint64_t ip, uint8_t cache
       best_pref_idx = i;
     }
   }
-
+#else
+  best_pref_idx = PREF_ID;
+#endif 
   /* Step 3: check the end of current phase or the end of current round */
   if(n_added_addr >= CONFIDENCE_WINDOW_SIZE)
   {
