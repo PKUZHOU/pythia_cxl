@@ -1,4 +1,4 @@
-exp_tag=baseline_4C
+exp_tag=baseline_8C
 mem_channels=4
 num_cores=8
 dram_io=4800

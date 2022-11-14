@@ -1158,9 +1158,9 @@ void CACHE::handle_prefetch()
     {
       for(int i = 0; i< PQ.SIZE;i++)
       {
-        if(PQ.entry[i].address!=0 && PQ.entry[i].fill_level == FILL_LLC && PQ.entry[i].pf_origin_level == FILL_PFB)
+        if(PQ.entry[i].address!=0 && PQ.entry[i].fill_level == FILL_LLC)
         {
-          auto llc = (CACHE*)upper_level_dcache[prefetch_cpu]->upper_level_dcache[prefetch_cpu];
+          auto llc = upper_level_dcache[prefetch_cpu]->upper_level_dcache[prefetch_cpu];
           if(llc->PQ.occupancy < llc->PQ.SIZE)
           {
             PQ.entry[i].active_pref = 1; // should go to llc
@@ -1467,11 +1467,11 @@ void CACHE::handle_prefetch()
             if (PQ.entry[index].fill_level < MSHR.entry[mshr_index].fill_level)
             {
               // cout<<"Merge early pref. "<<hex<<PQ.entry[index].address<<dec<< "PQ CPU: "<<PQ.entry[index].cpu << "MSHR CPU: "<<MSHR.entry[mshr_index].cpu<< endl;
-              if(MSHR.entry[mshr_index].fill_level == FILL_LLC)
+              if(NUM_CPUS > 1 && MSHR.entry[mshr_index].fill_level == FILL_LLC)
               {
                 MSHR.entry[mshr_index].cpu = PQ.entry[index].cpu;
               }
-                MSHR.entry[mshr_index].fill_level = PQ.entry[index].fill_level;
+              MSHR.entry[mshr_index].fill_level = PQ.entry[index].fill_level;
             }
 
             MSHR_MERGED[PQ.entry[index].type]++;
@@ -1994,7 +1994,8 @@ int CACHE::add_pq(PACKET *packet)
     {
       PQ.entry[index].fill_level = packet->fill_level;
       // avoides multicore active prefetching bug
-      PQ.entry[index].cpu = packet->cpu;
+      if(NUM_CPUS > 1)
+        PQ.entry[index].cpu = packet->cpu;
     }
 
     PQ.MERGED++;
