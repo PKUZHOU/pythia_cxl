@@ -31,7 +31,6 @@
 //#define WITH_PFB
 //#define WITH_CXL
 
-
 #define NO_CRC2_COMPILE
 
 #ifdef DEBUG_PRINT
@@ -40,8 +39,15 @@
 #define DP(x)
 #endif
 
+
+#include "defines.h"
+
+
 // CPU
-#define NUM_CPUS 1
+#ifndef NUM_CPUS
+    #define NUM_CPUS 1
+#endif
+
 #define CPU_FREQ 4000
 #define PAGE_SIZE 4096
 #define LOG2_PAGE_SIZE 12
@@ -62,14 +68,13 @@
 #define FILL_PFB   16
 #define FILL_DRAM  32
 
-// // CXL
-// #define CXL_CHANNELS 1      // default: assuming one DIMM per one channel 4GB * 1 => 4GB off-chip memory
-// #define LOG2_CXL_CHANNELS 0
-// #define CXL_BW_LEVELS 4
-
 // DRAM
-#define DRAM_CHANNELS 1      // default: assuming one DIMM per one channel 4GB * 1 => 4GB off-chip memory
-#define LOG2_DRAM_CHANNELS 0
+#ifndef DRAM_CHANNELS
+    #define DRAM_CHANNELS 1      // default: assuming one DIMM per one channel 4GB * 1 => 4GB off-chip memory
+#endif 
+#ifndef LOG2_DRAM_CHANNELS
+    #define LOG2_DRAM_CHANNELS 0
+#endif 
 #define DRAM_RANKS 1         // 512MB * 8 ranks => 4GB per DIMM
 #define LOG2_DRAM_RANKS 0
 #define DRAM_BANKS 8         // 64MB * 8 banks => 512MB per rank
@@ -84,9 +89,6 @@
 #define DRAM_PAGES ((DRAM_SIZE<<10)>>2) 
 //#define DRAM_PAGES 10
 #define DRAM_BW_LEVELS 4
-
-
-#include "defines.h"
 
 #ifndef DRAM_IO_FREQ
     #define DRAM_IO_FREQ 2400 // DDR4-2400
