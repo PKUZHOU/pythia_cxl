@@ -2243,6 +2243,8 @@ void prefetcher_initialize_vldp()
 bf::basic_bloom_filter *bfs[PREFETCHER_NUM];
 uint64_t scores[PREFETCHER_NUM]; // running scores
 uint64_t prev_scores[PREFETCHER_NUM];
+uint64_t score_sum[PREFETCHER_NUM];
+deque<uint64_t> score_qeue[PREFETCHER_NUM];
 
 int n_added_addr;
 int best_pref_idx;
@@ -2271,6 +2273,7 @@ void CACHE::pfb_prefetcher_initialize()
     assert(bfs[i]);
     scores[i] = 0;
     prev_scores[i] = 0;
+    score_sum[i] = 0;
   }
   n_added_addr = 0;
   best_pref_idx = 0;
@@ -2509,17 +2512,23 @@ uint32_t CACHE::pfb_prefetcher_operate(uint64_t addr, uint64_t ip, uint8_t cache
   /* Step 4: generate actual prefetch reuqests based on the scores */
 
   bool fill_llc = false;
-  uint64_t delta_scores = max_score - prev_scores[best_pref_idx];
-  double acc = (double) delta_scores / n_added_addr;
-  if(n_added_addr > WARMUP_STEPS && acc > ACTIVE_THRESH)
+
+  double delta_scores = max_score - prev_scores[best_pref_idx];
+  if(n_added_addr > WARMUP_STEPS)
   {
-    fill_llc = true;
+    double acc = delta_scores / n_added_addr;
+    if(acc > ACTIVE_THRESH)
+    {
+      fill_llc = true;
+    }
   }
 
   int fetched = 0;
+  int n_candidates = all_candidates[best_pref_idx].size();
+  int n_pref_to_pfb = n_candidates - ACTIVE_DEGREE > 0 ? n_candidates - ACTIVE_DEGREE : 0;
   for (auto pf_addr : all_candidates[best_pref_idx])
   {
-    prefetch_line(ip, addr, pf_addr, (fill_llc && (fetched < ACTIVE_DEGREE)) ? FILL_LLC : FILL_PFB, metadata_in);
+    prefetch_line(ip, addr, pf_addr, (fill_llc && (fetched >= n_pref_to_pfb)) ? FILL_LLC : FILL_PFB, metadata_in);
     fetched++;
     prefecth_cnt[best_pref_idx]++;
     if (fetched >= PREFETCH_DEGREE)
