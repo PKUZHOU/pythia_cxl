@@ -1,15 +1,24 @@
 from turtle import right
 
 
-no_pref = []
-pythia = []
-with open("80_ns_slowdown.txt",'r') as f:
+no = []
+base = []
+active = []
+with open("streamer.txt",'r') as f:
     ipc = f.readlines()
-    no_pref_line = ipc[0].strip().split("\t")
-    pythia_line = ipc[1].strip().split("\t")
-    no_pref = [1-float(x) for x in no_pref_line]
-    pythia = [1-float(x) for x in pythia_line]
+    no_line = ipc[0].strip().split("\t")
+    base_line = ipc[1].strip().split("\t")
+    active_line = ipc[2].strip().split("\t")
 
+    for x in no_line:
+        try:
+            no.append(-float(x))
+        except:
+            pass
+    for x in base_line:
+        base.append(-float(x))
+    for x in active_line:
+        active.append(-float(x))
 
 def stat(data):
     steps = [[-100,5],[5,15],[15,25],[25,35],[35,1000]]
@@ -25,5 +34,6 @@ def stat(data):
     return numbers
 
 
-print(stat(no_pref))
-print(stat(pythia))
+print(stat(no))
+print(stat(base))
+print(stat(active))
