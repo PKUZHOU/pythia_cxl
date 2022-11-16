@@ -3,6 +3,9 @@ import csv
 import argparse
 import math
 
+def geomean(xs):
+    return math.exp(math.fsum(math.log(x) for x in xs) / len(xs))
+
 def parse_args():
     parser = argparse.ArgumentParser(description='Experiments')
     parser.add_argument('--exp_tag', type=str, default='test',
@@ -71,14 +74,14 @@ def run(args):
                     with open(file_path, 'r') as f2:
                         lines = f2.readlines()
                         if task == 'ipc':
-                            avg_ipc = 0
+                            ipcs = []
                             for core_id in range(args.num_cores):
                                 for line in lines:
                                     if "Core_{}_IPC".format(core_id) in line:
                                         ipc = float(line.split(" ")[1].strip())
-                                        avg_ipc += ipc        
+                                        ipcs.append(ipc)       
                                         print("Core_{}_IPC".format(core_id), ipc)
-                            all_results[config][task_name] = avg_ipc / args.num_cores
+                            all_results[config][task_name] = geomean(ipcs)
                                     
 
                         elif task == 'llc_load_miss':
